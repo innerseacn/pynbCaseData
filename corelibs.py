@@ -63,7 +63,11 @@ def save_accounts(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str) ->
 def _save_as_format(df: pd.DataFrame, file_name:  pathlib.Path, output_form: str='csv') -> None:
     """根据配置格式保存dataframe：默认为csv文件"""
     if output_form == "excel":
-        df.to_excel(file_name.with_suffix('.xlsx'), index=False)
+        _name = file_name.with_suffix('.xlsx')
+        if _name.exists():
+            _old_df = pd.read_excel(_name, dtype=str)
+            df = pd.concat([_old_df, df], copy=False)
+        df.to_excel(_name, index=False)
     else:
         df.to_csv(file_name.with_suffix('.csv'), mode='a', index=False)
         
