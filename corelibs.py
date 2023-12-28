@@ -1,6 +1,7 @@
 import yaml
 import pandas as pd
 import pathlib
+from tqdm import tqdm
 from typing import List, Dict, Union
 
 # 加载全局配置文件
@@ -13,7 +14,11 @@ with open('config.yaml', 'r', encoding='utf-8') as f:
 # ===========================================================
 def parse_sheet_general(excel_file: pd.ExcelFile, sheet, conf_data: Dict) -> pd.ExcelFile:
     """分析一般数据sheet：支持sheet中仅含单表，返回dataframe"""
-    df = excel_file.parse(sheet_name=sheet, header=0, skiprows=0, dtype=str)
+    if 'amount_cols' in conf_data:
+        converters = {_col:float for _col in conf_data['amount_cols']}
+    else:
+        converters = None
+    df = excel_file.parse(sheet_name=sheet, header=0, skiprows=0, dtype=str, converters=converters)
     
     # 根据配置进行前处理
     if 'verify_cols' in conf_data:
@@ -25,8 +30,16 @@ def parse_sheet_general(excel_file: pd.ExcelFile, sheet, conf_data: Dict) -> pd.
     if 'split_col' in conf_data:
         for _key, _val in conf_data['split_col'].items():
             split_2col(df, _key, _val[0], _val[1], _val[2])
-            
-    df = df.reindex(columns=conf_data['cols_new_order'])
+    if 'copy_col' in conf_data:
+        for _key, _val in conf_data['copy_col'].items():
+            df[_val] = df[_key]
+    if 'CDid' in conf_data:
+        CD_to_InOut(df, conf_data['CDid'])
+    if 'cols_new_order' in conf_data:
+        df = df.reindex(columns=conf_data['cols_new_order'], copy=False)
+    if 'col_name_map' in conf_data:
+        df.rename(columns=conf_data['col_name_map'], inplace=True, errors='raise')
+        
     return df
 
 
@@ -53,25 +66,48 @@ def split_2col(df: pd.ExcelFile, col: str, delimiter: str, new_col1: str, new_co
     df[[new_col1, new_col2]] = df[col].str.split(delimiter, expand=True)
     return df
 
+def CD_to_InOut(df: pd.ExcelFile, cdid: Dict) -> pd.ExcelFile:
+    """将借/贷方式表示的交易金额改为出账列、入账列方式表示"""
+    _C_crit = df[cdid['CD_col']] == cdid['C']
+    df[cdid['C_col']] = df[cdid['trans_col']][_C_crit]
+    df[cdid['D_col']] = df[cdid['trans_col']][~_C_crit]
+    return df
+    
+    
+
 # ===========================================================
-def save_accounts(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str) -> None:
-    """保存账户信息：在“0银行账户”目录中每个银行保存一个文件"""
+def save_accounts(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str='默认银行') -> int:
+    """保存账户数据：在“0银行账户”目录中每个银行保存一个文件，返回写入的行数"""
     _account_dir = output_dir.joinpath('0银行账户') # 默认账户文件根目录
     _account_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
-    _save_as_format(df, _account_dir.joinpath(bank_name), OUTPUT_FORMAT) # 用指定格式保存文件
+    return  _save_as_format(df, _account_dir.joinpath(bank_name), OUTPUT_FORMAT)
     
-def _save_as_format(df: pd.DataFrame, file_name:  pathlib.Path, output_form: str='csv') -> None:
-    """根据配置格式保存dataframe：默认为csv文件"""
-    if output_form == "excel":
+def save_statements(df_list: List, output_dir: pathlib.Path, bank_name: str='默认银行') -> int:
+    """保存流水数据：每个人名设立一个目录，每个账户保存一个文件，文件名为银行+账户，返回写入的行数"""
+    _lines = 0
+    for _df in tqdm(df_list):
+        _acc_name = _df['姓名'].iat[0]
+        _acc = _df['账号'].iat[0]
+        _statement_dir = output_dir.joinpath(_acc_name) # 每个人名建立一个目录
+        _statement_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
+        _file_name = '：'.join([_make_df_brief(_df), bank_name, _acc])
+        _lines += _save_as_format(_df, _statement_dir.joinpath(_file_name), OUTPUT_FORMAT)
+    return _lines
+
+def _save_as_format(df: pd.DataFrame, file_name:  pathlib.Path, output_form: str='excel') -> int:
+    """根据配置格式保存dataframe：默认为excel文件，返回写入的行数"""
+    if output_form == 'csv':
+#         注意：本行未经充分测试，不可正式使用
+        df.to_csv(file_name.with_suffix('.csv'), mode='a', index=False)
+    else:
         _name = file_name.with_suffix('.xlsx')
         if _name.exists():
             _old_df = pd.read_excel(_name, dtype=str)
             df = pd.concat([_old_df, df], copy=False)
         df.to_excel(_name, index=False)
-    else:
-        df.to_csv(file_name.with_suffix('.csv'), mode='a', index=False)
+    return len(df)
         
-    
-
-# 写入csv：每账户存一个csv，每个人存一个目录，文件名为姓名+银行+卡号
-
+def _make_df_brief(df: pd.DataFrame) -> str:
+    """生成流水简介：内容包括流水条数和最大数额（约到整万）"""
+    _max = int(df[['出账金额','入账金额','余额']].max().max() // 10000 +1)
+    return '最大' + str(_max) + '万,共' +str(len(df)) + '条'
