@@ -3,79 +3,117 @@ import pandas as pd
 import pathlib
 from tqdm import tqdm
 from typing import List, Dict, Union
+from collections import namedtuple
 
 # 加载全局配置文件
 with open('config.yaml', 'r', encoding='utf-8') as f:
-    CONF_DATA = yaml.load(f, Loader=yaml.SafeLoader)
+    CONF_DATA = yaml.safe_load(f)
     OUTPUT_FORMAT = CONF_DATA['output_format']
 
-    
-    
-# ===========================================================
-def parse_sheet_general(file_path: pathlib.Path, sheet, conf_data: Dict) -> pd.DataFrame:
-    """分析一般数据sheet：支持sheet中仅含单表，返回dataframe"""
+Conf_tpl = namedtuple('Conf_tpl', 'new_cols verify_cols col_name_map merge_2cols date_cols time_cols digi_cols cdid cols_new_order')
+
+def creat_conf_obj(conf_data: Dict) -> Dict:
+    """将银行配置转换成操作配置"""
     _new_cols = {} # 构造需要填充统一内容的列字典，通常是新列
     _verify_cols = {} # 构造需要进行数据检查的列字典，（v1）版本只检查空值
     _col_name_map = {} # 构造需要改名的列字典
     _merge_2cols = {} # 构造需要合并的列字典
+    _date_cols = {} # 构造转换日期列字典
+    _time_cols = {} # 构造转换时间列字典
+    _digi_cols = {} # 构造转换数值列字典
+    _cdid = {} # 构造借贷分列转换字典
     
     #根据配置信息生成列处理逻辑
     for _key, _val in conf_data.items(): # 读取配置中的列名（key）和列配置（val）
-        if isinstance(_val, str): # 如果列配置为str，则本列全部内容为该字符串，通常是全新的列
+        if _val is None: # 如果列配置为None，什么都不做
+            continue
+        elif type(_val) == str: # 如果列配置为str，则本列全部内容为该字符串，通常是全新的列
             _new_cols[_key] = _val
-        elif isinstance(_val, bool) and _val: # 如果列配置为bool且为True，代表本列需要数据检查
+        elif type(_val) == bool and _val: # 如果列配置为bool且值为真，代表本列需要数据检查
             _verify_cols[_key] = True # （v1）版本只检查空值，此处恒为True
-        elif isinstance(_val, dict): # 如果列配置为dict，则分情况讨论
-            for __k, __v in _val.items(): # 首先检查所有字典值，将为True的加入数据检查中
-                if __v:
+        elif type(_val) == int: # 如果列配置为int，代表本列需转换为数值；若值为真，代表本列需要数据检查
+            if _val:
+                _verify_cols[_key] = True
+            _digi_cols[_key] = _key # 加入转换为数值列字典
+        elif type(_val) == dict: # 如果列配置为dict，则分情况讨论
+            for __k, __v in _val.items(): # 首先检查所有字典值
+                if __v: # 将值为真的加入数据检查中，兼容bool类型和int类型
                      _verify_cols[__k] = True
+                if type(__v) == int:
+                    _digi_cols[_key] = _key # 加入转换为数值列字典
             if len(_val) == 1: # 当字典中只有一项时，代表本列需要改名
                 _col_name_map[next(iter(_val))] = _key
             elif len(_val) > 1: # 当字典中有两项或更多时，代表本列需要合并多个原始列（目前仅支持两个）
                 _merge_2cols[_key] = list(_val.keys())
             else:
                 raise Exception(f"字典类型长度错误，检查配置列：{_key}") 
-        elif isinstance(_val, list): # 
-            if _key != 'cols_new_order':
-                raise Exception(f"只有cols_new_order可以配置为list类型，检查配置列：{_key}")                 
+        elif type(_val) == list: 
+            if _key != 'cols_new_order': # 进行扩展操作，目前支持date、time、C、D
+                if _val[0] == 'date':
+                    _date_cols[_key] = _val[1]
+                elif _val[0] == 'time':
+                    _time_cols[_key] = _val[1]
+                elif _val[0] == 'C':
+                    _cdid['C'] = _val[2]
+                    _cdid['CD_col'] = _val[1]
+                    _cdid['C_col'] = _key
+                    _cdid['trans_col'] = _val[3]
+                elif _val[0] == 'D':
+                    _cdid['D'] = _val[2]
+                    _cdid['CD_col'] = _val[1]
+                    _cdid['D_col'] = _key
+                    _cdid['trans_col'] = _val[3]
+                else:
+                    raise Exception(f"配置为list类型目前只支持转换为date和time格式，检查配置列：{_key}")                 
         else:
             raise Exception(f"配置内容类型不支持，检查配置列：{_key}") 
-                
+
+    # 返回列处理逻辑对象        
+    return Conf_tpl(_new_cols, _verify_cols, 
+                            _col_name_map, 
+                            _merge_2cols, 
+                            _date_cols, 
+                            _time_cols, 
+                            _digi_cols,
+                            _cdid, 
+                            conf_data.get('cols_new_order')
+                            )
+
+    
+    
+# ===========================================================
+def parse_sheet_general(file_path: pathlib.Path, sheet, conf_data: Conf_tpl) -> pd.DataFrame:
+    """分析一般数据sheet：支持sheet中仅含单表，返回dataframe"""
     # 读取工作表内容
     df = pd.read_excel(file_path, sheet_name=sheet, header=0, skiprows=0, dtype=str)
         
     # 列数据处理
-    if (_col := verify_data(df, _verify_cols)) != 0: # 执行数据检查
+    if (_col := verify_data(df, conf_data.verify_cols)) != 0: # 执行数据检查
         raise Exception(f"验证未通过，需清洗数据列：{_col}") # todo: 临时措施
-    for _k, _v in _new_cols.items(): # 执行新列赋值
+    for _k, _v in conf_data.new_cols.items(): # 执行新列赋值
         df[_k] = _v
-    for _k, _v in _merge_2cols.items(): # 执行两列合并
+    for _k, _v in conf_data.merge_2cols.items(): # 执行两列合并
         merge_2cols(df, _k, _v[0], _v[1])
-            
-            
-            
-#     if 'datetime_cols' in conf_data:
-#         _datetime_cols = conf_data['datetime_cols']
-#         df[_datetime_cols[0]] = pd.to_datetime(df[_datetime_cols[1]]).dt.date
-#         df[_datetime_cols[2]] = pd.to_datetime(df[_datetime_cols[3]]).dt.time
+    for _k, _v in conf_data.date_cols.items(): # 执行日期列数据转换
+        df[_k] = pd.to_datetime(df[_v]).dt.date
+    for _k, _v in conf_data.time_cols.items(): # 执行时间列数据转换
+        df[_k] = pd.to_datetime(df[_v]).dt.time
+    for _k, _v in conf_data.digi_cols.items(): # 执行数据列数据转换
+        df[_k] = pd.to_numeric(df[_v])
+    if conf_data.cdid: # 执行借贷列分列
+        CD_to_InOut(df, conf_data.cdid)
+
 #     if 'split_col' in conf_data:
 #         for _key, _val in conf_data['split_col'].items():
 #             split_2col(df, _key, _val[0], _val[1], _val[2])
 #     if 'copy_col' in conf_data:
 #         for _key, _val in conf_data['copy_col'].items():
 #             df[_val] = df[_key]
-#     if 'CDid' in conf_data:
-#         CD_to_InOut(df, conf_data['CDid'])
-
-#     if 'amount_cols' in conf_data:
-#         converters = {_col:float for _col in conf_data['amount_cols']}
-#     else:
-#         converters = None
         
-    if len(_col_name_map) > 0: # 执行修改列名
-        df.rename(columns=_col_name_map, inplace=True, errors='raise')
-    if 'cols_new_order' in conf_data: #执行列序重排
-        df = df.reindex(columns=conf_data['cols_new_order'], copy=False)
+    # 执行修改列名
+    df.rename(columns=conf_data.col_name_map, inplace=True, errors='raise')
+    #执行列序重排
+    df = df.reindex(columns=conf_data.cols_new_order, copy=False)
         
     return df
 
