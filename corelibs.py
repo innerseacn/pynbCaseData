@@ -10,7 +10,7 @@ with open('config.yaml', 'r', encoding='utf-8') as f:
     CONF_DATA = yaml.safe_load(f)
     OUTPUT_FORMAT = CONF_DATA['output_format']
 
-Conf_tpl = namedtuple('Conf_tpl', 'new_cols verify_cols col_name_map merge_2cols date_cols time_cols digi_cols cdid cols_new_order')
+Conf_tpl = namedtuple('Conf_tpl', 'new_cols verify_cols col_name_map merge_2cols date_cols time_cols digi_cols cdid fill_cols cols_new_order')
 
 def creat_conf_obj(conf_data: Dict) -> Dict:
     """将银行配置转换成操作配置"""
@@ -22,6 +22,7 @@ def creat_conf_obj(conf_data: Dict) -> Dict:
     _time_cols = {} # 构造转换时间列字典
     _digi_cols = {} # 构造转换数值列字典
     _cdid = {} # 构造借贷分列转换字典
+    _fill_cols = {} # 构造列条件填充字典
     
     #根据配置信息生成列处理逻辑
     for _key, _val in conf_data.items(): # 读取配置中的列名（key）和列配置（val）
@@ -63,6 +64,8 @@ def creat_conf_obj(conf_data: Dict) -> Dict:
                     _cdid['CD_col'] = _val[1]
                     _cdid['D_col'] = _key
                     _cdid['trans_col'] = _val[3]
+                elif _val[0] == 'fill':
+                    _fill_cols[_key] = _val[1:]
                 else:
                     raise Exception(f"配置为list类型目前只支持转换为date和time格式，检查配置列：{_key}")                 
         else:
@@ -76,10 +79,11 @@ def creat_conf_obj(conf_data: Dict) -> Dict:
                             _time_cols, 
                             _digi_cols,
                             _cdid, 
+                            _fill_cols,
                             conf_data.get('cols_new_order')
                             )
 
-    
+
     
 # ===========================================================
 def parse_sheet_general(file_path: pathlib.Path, sheet, conf_data: Conf_tpl) -> pd.DataFrame:
@@ -102,6 +106,8 @@ def parse_sheet_general(file_path: pathlib.Path, sheet, conf_data: Conf_tpl) -> 
         df[_k] = pd.to_numeric(df[_v])
     if conf_data.cdid: # 执行借贷列分列
         CD_to_InOut(df, conf_data.cdid)
+    for _k, _v in conf_data.fill_cols.items(): # 执行列条件填充
+        fill_col(df, _v[2], _k, _v[0], _v[1])
 
 #     if 'split_col' in conf_data:
 #         for _key, _val in conf_data['split_col'].items():
@@ -152,6 +158,15 @@ def CD_to_InOut(df: pd.DataFrame, cdid: Dict) -> pd.DataFrame:
     df[cdid['D_col']] = df[cdid['trans_col']][~_C_crit]
     return df
     
+def fill_col(df: pd.DataFrame, from_col: str, to_col: str, crit_col: str, crit_val) -> pd.DataFrame:
+    """根据填充标志列的取值，将原列的值填充到目标列"""
+    if crit_val is None:
+        _crit = df[crit_col].isnull()
+    else:
+        _crit = df[crit_col] == crit_val
+    df[to_col][_crit] = df[from_col][_crit]
+    return df
+    
     
 
 # ===========================================================
@@ -169,12 +184,12 @@ def save_statements(df_list: List, output_dir: pathlib.Path, bank_name: str='默
         _acc_name = _df['姓名'].iat[0]
         _acc_name_set.add(_acc_name)
         _acc = _df['账号'].iat[0]
-        _statement_dir = output_dir.joinpath(_acc_name) # 每个人名建立一个目录
+        _statement_dir = output_dir.joinpath('人员流水', _acc_name) # 每个人名建立一个目录
         _statement_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
         _file_name = '：'.join([_make_df_brief(_df), bank_name, _acc])
         _lines += _save_as_format(_df, _statement_dir.joinpath(_file_name), OUTPUT_FORMAT, False)
     if doc_No is not None: # 保存查询文书记录
-        _text = ','.join([doc_No, bank_name, str(_acc_name_set)])  + "\n"
+        _text = ','.join([doc_No, bank_name, str(_acc_name_set).replace(',', '')])  + "\n"
         with open(output_dir.joinpath('0查询文号.csv'), 'a') as f:
             f.write(_text)
     return _lines
