@@ -35,13 +35,13 @@ def creat_conf_obj(conf_data: Dict) -> Dict:
         elif type(_val) == int: # 如果列配置为int，代表本列需转换为数值；若值为真，代表本列需要数据检查
             if _val:
                 _verify_cols[_key] = True
-            _digi_cols[_key] = _key # 加入转换为数值列字典
+            _digi_cols[_key] = True # 加入转换为数值列字典
         elif type(_val) == dict: # 如果列配置为dict，则分情况讨论
             for __k, __v in _val.items(): # 首先检查所有字典值
                 if __v: # 将值为真的加入数据检查中，兼容bool类型和int类型
                      _verify_cols[__k] = True
                 if type(__v) == int:
-                    _digi_cols[_key] = _key # 加入转换为数值列字典
+                    _digi_cols[__k] = True # 加入转换为数值列字典
             if len(_val) == 1: # 当字典中只有一项时，代表本列需要改名
                 _col_name_map[next(iter(_val))] = _key
             elif len(_val) > 1: # 当字典中有两项或更多时，代表本列需要合并多个原始列（目前仅支持两个）
@@ -86,10 +86,10 @@ def creat_conf_obj(conf_data: Dict) -> Dict:
 
     
 # ===========================================================
-def parse_sheet_general(file_path: pathlib.Path, sheet, conf_data: Conf_tpl) -> pd.DataFrame:
+def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, header=0) -> pd.DataFrame:
     """分析一般数据sheet：支持sheet中仅含单表，返回dataframe"""
     # 读取工作表内容
-    df = pd.read_excel(file_path, sheet_name=sheet, header=0, skiprows=0, dtype=str)
+    df = pd.read_excel(file_path, sheet_name=sheet, header=header, skiprows=0, dtype=str)
         
     # 列数据处理
     if (_col := verify_data(df, conf_data.verify_cols)) != 0: # 执行数据检查
@@ -103,7 +103,7 @@ def parse_sheet_general(file_path: pathlib.Path, sheet, conf_data: Conf_tpl) -> 
     for _k, _v in conf_data.time_cols.items(): # 执行时间列数据转换
         df[_k] = pd.to_datetime(df[_v]).dt.time
     for _k, _v in conf_data.digi_cols.items(): # 执行数据列数据转换
-        df[_k] = pd.to_numeric(df[_v])
+        df[_k] = pd.to_numeric(df[_k])
     if conf_data.cdid: # 执行借贷列分列
         CD_to_InOut(df, conf_data.cdid)
     for _k, _v in conf_data.fill_cols.items(): # 执行列条件填充
