@@ -1,18 +1,20 @@
-import yaml
-import pandas as pd
-import pathlib
+import yaml, pathlib
+import pandas as pd, openpyxl as op, xlrd as xl
 from tqdm import tqdm
-from typing import List, Dict, Union
 from collections import namedtuple
+from itertools import islice
+# from typing import List, Dict, Any, Mapping
+
 
 # 加载全局配置文件
 with open('config.yaml', 'r', encoding='utf-8') as f:
     CONF_DATA = yaml.safe_load(f)
     OUTPUT_FORMAT = CONF_DATA['output_format']
+    HEADER_HASH = CONF_DATA['header_hash']
 
 Conf_tpl = namedtuple('Conf_tpl', 'new_cols verify_cols col_name_map merge_2cols date_cols time_cols digi_cols cdid fill_cols cols_new_order')
 
-def creat_conf_obj(conf_data: Dict) -> Dict:
+def creat_conf_obj(conf_data: dict) -> Conf_tpl:
     """将银行配置转换成操作配置"""
     _new_cols = {} # 构造需要填充统一内容的列字典，通常是新列
     _verify_cols = {} # 构造需要进行数据检查的列字典，（v1）版本只检查空值
@@ -123,14 +125,46 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
         
     return df
 
-def acc_or_stat(file: pathlib.Path, sheet, conf_data: Dict) -> bool:
-    """判断给定文件是账户还是流水，返回bool值，True表示是账户文件，False表示是流水文件"""
-    df = excel_file.parse(sheet_name=sheet, header=0, skiprows=0, dtype=str, converters=converters)
+def read_header(file_path: pathlib.Path, sheet=None, header: int=0) -> tuple:
+    """读取文件表头，用于识别文件来源，目前支持xls和xlsx文件"""
+    if (_suff := file_path.suffix) == '.xlsx':
+        return _read_header_xlsx(file_path, sheet, header)
+    elif _suff == '.xls':
+        return _read_header_xls(file_path, sheet, header)
+    else:
+        return ()
 
+def _read_header_xlsx(file_path: pathlib.Path, sheet=None, header: int=0) -> tuple:
+    """读取文件表头，用于识别文件来源"""
+    _work_book = op.load_workbook(file_path, read_only=True)
+    if sheet is None:
+        _sheet = _work_book.active
+    elif type(sheet) == int:
+        _sheet = _work_book[_work_book.sheetnames[sheet]]
+    elif type(sheet) == str:
+        _sheet = _work_book[sheet]
+    else:
+        raise Exception(f"sheet参数只能为int或str") 
+    _sheet.calculate_dimension(force=True)
+    _sheet.reset_dimensions()
+    return next(islice(_sheet.values, header, header+1))
 
+def _read_header_xls(file_path: pathlib.Path, sheet=None, header: int=0) -> tuple:
+    _work_book = xl.open_workbook(file_path, on_demand=True)
+    if sheet is None:
+        _sheet = _work_book.sheet_by_index(0)
+    elif type(sheet) == int:
+        _sheet = _work_book.sheet_by_index(sheet)
+    elif type(sheet) == str:
+        _sheet = _work_book.sheet_by_name(sheet)
+    else:
+        raise Exception(f"sheet参数只能为int或str") 
+    return tuple(_sheet.row_values(header))
+
+    
 
 # ===========================================================
-def verify_data(df: pd.DataFrame, cols: Dict) -> Union[str, int]:
+def verify_data(df: pd.DataFrame, cols: dict) -> str or int:
     """验证给定dataframe的相关列是否完整：存在空值返回列名，验证通过返回0"""
     for _col in cols:
         if df[_col].isnull().any():
@@ -151,7 +185,7 @@ def split_2col(df: pd.DataFrame, col: str, delimiter: str, new_col1: str, new_co
     df[[new_col1, new_col2]] = df[col].str.split(delimiter, expand=True)
     return df
 
-def CD_to_InOut(df: pd.DataFrame, cdid: Dict) -> pd.DataFrame:
+def CD_to_InOut(df: pd.DataFrame, cdid: dict) -> pd.DataFrame:
     """将借/贷方式表示的交易金额改为出账列、入账列方式表示"""
     _C_crit = df[cdid['CD_col']] == cdid['C']
     df[cdid['C_col']] = df[cdid['trans_col']][_C_crit]
@@ -176,7 +210,7 @@ def save_accounts(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str='�
     _account_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
     return  _save_as_format(df, _account_dir.joinpath(bank_name), OUTPUT_FORMAT, True)
     
-def save_statements(df_list: List, output_dir: pathlib.Path, bank_name: str='默认银行', doc_No: str=None) -> int:
+def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默认银行', doc_No: str=None) -> int:
     """保存流水数据：每个人名设立一个目录，每个账户保存一个文件，文件名为银行+账户；可以传入文书号，这样将在单独的文书号文件中做记录，返回写入的流水条数"""
     _lines = 0
     _acc_name_set = set()
