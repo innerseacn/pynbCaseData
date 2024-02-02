@@ -1,6 +1,6 @@
 import yaml, pathlib
 import pandas as pd, openpyxl as op, xlrd as xl
-from tqdm import tqdm
+from tqdm.notebook import tqdm as tqnb
 from collections import namedtuple
 from itertools import islice
 # from typing import List, Dict, Any, Mapping
@@ -125,16 +125,16 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
         
     return df
 
-def read_header(file_path: pathlib.Path, sheet=None, header: int=0) -> tuple:
+def read_header(file_path: pathlib.Path, sheet=None, header: int=0) -> str:
     """读取文件表头，用于识别文件来源，目前支持xls和xlsx文件"""
     if (_suff := file_path.suffix) == '.xlsx':
         return _read_header_xlsx(file_path, sheet, header)
     elif _suff == '.xls':
         return _read_header_xls(file_path, sheet, header)
     else:
-        return ()
+        return ''
 
-def _read_header_xlsx(file_path: pathlib.Path, sheet=None, header: int=0) -> tuple:
+def _read_header_xlsx(file_path: pathlib.Path, sheet=None, header: int=0) -> str:
     """读取文件表头，用于识别文件来源"""
     _work_book = op.load_workbook(file_path, read_only=True)
     if sheet is None:
@@ -147,9 +147,9 @@ def _read_header_xlsx(file_path: pathlib.Path, sheet=None, header: int=0) -> tup
         raise Exception(f"sheet参数只能为int或str") 
     _sheet.calculate_dimension(force=True)
     _sheet.reset_dimensions()
-    return next(islice(_sheet.values, header, header+1))
+    return str(next(islice(_sheet.values, header, header+1)))
 
-def _read_header_xls(file_path: pathlib.Path, sheet=None, header: int=0) -> tuple:
+def _read_header_xls(file_path: pathlib.Path, sheet=None, header: int=0) -> str:
     _work_book = xl.open_workbook(file_path, on_demand=True)
     if sheet is None:
         _sheet = _work_book.sheet_by_index(0)
@@ -159,7 +159,7 @@ def _read_header_xls(file_path: pathlib.Path, sheet=None, header: int=0) -> tupl
         _sheet = _work_book.sheet_by_name(sheet)
     else:
         raise Exception(f"sheet参数只能为int或str") 
-    return tuple(_sheet.row_values(header))
+    return str(_sheet.row_values(header))
 
     
 
@@ -214,7 +214,7 @@ def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默
     """保存流水数据：每个人名设立一个目录，每个账户保存一个文件，文件名为银行+账户；可以传入文书号，这样将在单独的文书号文件中做记录，返回写入的流水条数"""
     _lines = 0
     _acc_name_set = set()
-    for _df in tqdm(df_list):
+    for _df in df_list:
         _acc_name = _df['姓名'].iat[0]
         _acc_name_set.add(_acc_name)
         _acc = _df['账号'].iat[0]
@@ -254,3 +254,25 @@ def _make_df_brief(df: pd.DataFrame) -> str:
     """生成流水简介：内容包括流水条数和最大数额（约到整万）"""
     _max = int(df[['出账金额','入账金额','余额']].max().max() // 10000 +1)
     return '最大' + str(_max) + '万,共' +str(len(df)) + '条'
+
+
+
+# ===========================================================
+def process_account_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str) -> pd.DataFrame:
+    """根据配置处理单个账户文件，并保存到指定目录"""
+    _conf_data = CONF_DATA[conf_lv1][conf_lv2]
+    _conf_obj = creat_conf_obj(_conf_data)
+    _df = parse_sheet_general(file, _conf_obj)
+    save_accounts(_df, output_dir, _conf_data.get('银行', '未配置银行'))
+    return _df
+
+def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str, doc_No: str=None) -> pd.DataFrame:
+    """根据配置处理单个流水文件，并保存到指定目录"""
+    _conf_data = CONF_DATA[conf_lv1][conf_lv2]
+    _conf_obj = creat_conf_obj(_conf_data)
+    _df = parse_sheet_general(file, _conf_obj)
+    _grouped = _df.groupby('账号')
+    _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
+    save_statements(_df_list, output_dir, _conf_data.get('银行', '未配置银行'), doc_No)
+    return _df
+
