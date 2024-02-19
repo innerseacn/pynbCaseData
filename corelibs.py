@@ -9,10 +9,21 @@ from itertools import islice
 # 加载全局配置文件
 with open('config.yaml', 'r', encoding='utf-8') as f:
     CONF_DATA = yaml.safe_load(f)
-    OUTPUT_FORMAT = CONF_DATA['output_format']
-    HEADER_HASH = CONF_DATA['header_hash']
+OUTPUT_FORMAT = CONF_DATA['output_format']
+HEADER_HASH = CONF_DATA['header_hash']
 
-Conf_tpl = namedtuple('Conf_tpl', 'new_cols verify_cols col_name_map merge_2cols date_cols time_cols digi_cols cdid fill_cols cols_new_order')
+Conf_tpl = namedtuple('Conf_tpl', 'bank_name new_cols verify_cols col_name_map merge_2cols date_cols time_cols digi_cols cdid fill_cols cols_new_order')
+
+CONF_TPL_CACHE: dict[str:Conf_tpl] = {}
+
+def get_conf_obj(bank: str, acc_or_stat: str) -> Conf_tpl:
+    """先在缓存中查找操作配置，如缓存中没有则转换配置并存入缓存"""
+    _key_str = bank + acc_or_stat
+    _conf_obj = CONF_TPL_CACHE.get(_key_str, None)
+    if _conf_obj is None:
+        _conf_obj = creat_conf_obj(CONF_DATA[bank][acc_or_stat])
+        CONF_TPL_CACHE[_key_str] = _conf_obj
+    return _conf_obj
 
 def creat_conf_obj(conf_data: dict) -> Conf_tpl:
     """将银行配置转换成操作配置"""
@@ -74,7 +85,9 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl:
             raise Exception(f"配置内容类型不支持，检查配置列：{_key}") 
 
     # 返回列处理逻辑对象        
-    return Conf_tpl(_new_cols, _verify_cols, 
+    return Conf_tpl(None,
+                            _new_cols,
+                            _verify_cols, 
                             _col_name_map, 
                             _merge_2cols, 
                             _date_cols, 
@@ -177,7 +190,8 @@ def merge_2cols(df: pd.DataFrame, new_col: str, col1: str, col2: str) -> pd.Data
     _df2 = df[col2].fillna('') # 填充两列空值为空字符串
     _cond = _df1 == _df2 # 保存判断条件：两列内容相等的行为true
     df[new_col] = (_df1 + ' ' + _df2).str.strip() # 两列相加并保存为新列
-    df[new_col][_cond] = _df2 # 恢复两列内容相同的行
+    # df[new_col][_cond] = _df2 # 恢复两列内容相同的行
+    df.loc[_cond, new_col] = _df2 # 恢复两列内容相同的行
     return df
 
 def split_2col(df: pd.DataFrame, col: str, delimiter: str, new_col1: str, new_col2: str) -> pd.DataFrame:
@@ -188,8 +202,8 @@ def split_2col(df: pd.DataFrame, col: str, delimiter: str, new_col1: str, new_co
 def CD_to_InOut(df: pd.DataFrame, cdid: dict) -> pd.DataFrame:
     """将借/贷方式表示的交易金额改为出账列、入账列方式表示"""
     _C_crit = df[cdid['CD_col']] == cdid['C']
-    df[cdid['C_col']] = df[cdid['trans_col']][_C_crit]
-    df[cdid['D_col']] = df[cdid['trans_col']][~_C_crit]
+    df[cdid['C_col']] = df.loc[_C_crit, cdid['trans_col']]
+    df[cdid['D_col']] = df.loc[~_C_crit, cdid['trans_col']]
     return df
     
 def fill_col(df: pd.DataFrame, from_col: str, to_col: str, crit_col: str, crit_val) -> pd.DataFrame:
@@ -198,7 +212,8 @@ def fill_col(df: pd.DataFrame, from_col: str, to_col: str, crit_col: str, crit_v
         _crit = df[crit_col].isnull()
     else:
         _crit = df[crit_col] == crit_val
-    df[to_col][_crit] = df[from_col][_crit]
+    # df[to_col][_crit] = df[from_col][_crit]
+    df.loc[_crit, to_col] = df.loc[_crit, from_col] 
     return df
     
     
@@ -208,7 +223,7 @@ def save_accounts(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str='�
     """保存账户数据：在“0银行账户”目录中每个银行保存一个文件，返回写入的行数"""
     _account_dir = output_dir.joinpath('0银行账户') # 默认账户文件根目录
     _account_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
-    return  _save_as_format(df, _account_dir.joinpath(bank_name), OUTPUT_FORMAT, True)
+    return  _save_as_format(df, _account_dir.joinpath(bank_name), output_dir, True)
     
 def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默认银行', doc_No: str=None) -> int:
     """保存流水数据：每个人名设立一个目录，每个账户保存一个文件，文件名为银行+账户；可以传入文书号，这样将在单独的文书号文件中做记录，返回写入的流水条数"""
@@ -258,21 +273,21 @@ def _make_df_brief(df: pd.DataFrame) -> str:
 
 
 # ===========================================================
-def process_account_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str) -> pd.DataFrame:
-    """根据配置处理单个账户文件，并保存到指定目录"""
-    _conf_data = CONF_DATA[conf_lv1][conf_lv2]
-    _conf_obj = creat_conf_obj(_conf_data)
-    _df = parse_sheet_general(file, _conf_obj)
-    save_accounts(_df, output_dir, _conf_data.get('银行', '未配置银行'))
-    return _df
+# def process_account_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str) -> pd.DataFrame:
+#     """根据配置处理单个账户文件，并保存到指定目录"""
+#     _conf_data = CONF_DATA[conf_lv1][conf_lv2]
+#     _conf_obj = creat_conf_obj(_conf_data)
+#     _df = parse_sheet_general(file, _conf_obj)
+#     save_accounts(_df, output_dir, _conf_data.get('银行', '未配置银行'))
+#     return _df
 
-def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str, doc_No: str=None) -> pd.DataFrame:
-    """根据配置处理单个流水文件，并保存到指定目录"""
-    _conf_data = CONF_DATA[conf_lv1][conf_lv2]
-    _conf_obj = creat_conf_obj(_conf_data)
-    _df = parse_sheet_general(file, _conf_obj)
-    _grouped = _df.groupby('账号')
-    _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
-    save_statements(_df_list, output_dir, _conf_data.get('银行', '未配置银行'), doc_No)
-    return _df
+# def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str, doc_No: str=None) -> pd.DataFrame:
+#     """根据配置处理单个流水文件，并保存到指定目录"""
+#     _conf_data = CONF_DATA[conf_lv1][conf_lv2]
+#     _conf_obj = creat_conf_obj(_conf_data)
+#     _df = parse_sheet_general(file, _conf_obj)
+#     _grouped = _df.groupby('账号')
+#     _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
+#     save_statements(_df_list, output_dir, _conf_data.get('银行', '未配置银行'), doc_No)
+#     return _df
 
