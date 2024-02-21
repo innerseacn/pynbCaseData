@@ -3,7 +3,8 @@ import pandas as pd, openpyxl as op, xlrd as xl
 from tqdm.notebook import tqdm as tqnb
 from collections import namedtuple
 from itertools import islice
-# from typing import List, Dict, Any, Mapping
+from collections import Counter
+from hashlib import md5
 
 
 # 加载全局配置文件
@@ -16,12 +17,12 @@ Conf_tpl = namedtuple('Conf_tpl', 'bank_name new_cols verify_cols col_name_map m
 
 CONF_TPL_CACHE: dict[str:Conf_tpl] = {}
 
-def get_conf_obj(bank: str, acc_or_stat: str) -> Conf_tpl:
+def get_conf_obj(bank_name: str, acc_or_stat: str) -> Conf_tpl:
     """先在缓存中查找操作配置，如缓存中没有则转换配置并存入缓存"""
-    _key_str = bank + acc_or_stat
+    _key_str = bank_name + acc_or_stat
     _conf_obj = CONF_TPL_CACHE.get(_key_str, None)
     if _conf_obj is None:
-        _conf_obj = creat_conf_obj(CONF_DATA[bank][acc_or_stat])
+        _conf_obj = creat_conf_obj(CONF_DATA[bank_name][acc_or_stat])
         CONF_TPL_CACHE[_key_str] = _conf_obj
     return _conf_obj
 
@@ -271,23 +272,62 @@ def _make_df_brief(df: pd.DataFrame) -> str:
     return '最大' + str(_max) + '万,共' +str(len(df)) + '条'
 
 
+# ===========================================================
+def process_account_file_general(file: pathlib.Path, output_dir: pathlib.Path, bank_name: str, acc_or_stat: str) -> pd.DataFrame:
+    """根据配置处理单个账户文件，并保存到指定目录"""
+    _conf_obj = get_conf_obj(bank_name, acc_or_stat)
+    _df = parse_sheet_general(file, _conf_obj)
+    save_accounts(_df, output_dir, bank_name)
+    return _df
+
+def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, bank_name: str, acc_or_stat: str, doc_No: str=None) -> pd.DataFrame:
+    """根据配置处理单个流水文件，并保存到指定目录"""
+    _conf_obj = get_conf_obj(bank_name, acc_or_stat)
+    _df = parse_sheet_general(file, _conf_obj)
+    _grouped = _df.groupby('账号')
+    _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
+    save_statements(_df_list, output_dir, bank_name, doc_No)
+    return _df
+
+def process_files_general(files_list: list, output_dir: pathlib.Path, doc_No: str=None) -> list:
+    """根据配置处理多个文件，跳过出错文件，返回处理文件个数和出错文件列表"""
+    _err_file_dict = {} # 保存解析出错的文件和原因
+    for _file in tqnb(files_list):
+        print(f'{_file.name}……', end='')
+        _header = read_header(_file).encode() # 读取每个文件的表头
+        _conf_name = HEADER_HASH.get(md5(_header).hexdigest()) # 根据表头md5值找到相应的配置
+        if _conf_name is None:
+            print(_msg := '未找到对应配置，跳过')
+            _err_file_dict[_file] = _msg
+            continue
+        else:
+            try:    
+                if _conf_name[1] == '账户':
+                    process_account_file_general(_file, output_dir, _conf_name[0], '账户')
+                elif _conf_name[1] == '流水':
+                    process_statment_file_general(_file, output_dir, _conf_name[0], '流水', doc_No)
+                else:
+                     raise Exception("header_hash配置有误") 
+            except Exception as e:
+                print( _msg := str(e))
+                _err_file_dict[_file] = _msg
+            else:
+                print(f'{"".join(_conf_name)}done')
+    return _err_file_dict
+
+
 
 # ===========================================================
-# def process_account_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str) -> pd.DataFrame:
-#     """根据配置处理单个账户文件，并保存到指定目录"""
-#     _conf_data = CONF_DATA[conf_lv1][conf_lv2]
-#     _conf_obj = creat_conf_obj(_conf_data)
-#     _df = parse_sheet_general(file, _conf_obj)
-#     save_accounts(_df, output_dir, _conf_data.get('银行', '未配置银行'))
-#     return _df
-
-# def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, conf_lv1: str, conf_lv2: str, doc_No: str=None) -> pd.DataFrame:
-#     """根据配置处理单个流水文件，并保存到指定目录"""
-#     _conf_data = CONF_DATA[conf_lv1][conf_lv2]
-#     _conf_obj = creat_conf_obj(_conf_data)
-#     _df = parse_sheet_general(file, _conf_obj)
-#     _grouped = _df.groupby('账号')
-#     _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
-#     save_statements(_df_list, output_dir, _conf_data.get('银行', '未配置银行'), doc_No)
-#     return _df
+def process_dir_ccb_branch(dir_path: pathlib.Path, output_dir: pathlib.Path, doc_No: str=None) -> None:
+    """分析建设银行网点结果目录"""
+    # 分析是否存在因为超过9999条而分文件保存的流水文件
+    if dir_path.is_dir():
+        _file_names = list(dir_path.glob('[!~]*.xlsx')) # 找到目录中所有的excel文件（不含子目录）
+         # 检查是否存在超过9999条的数据（文件名第二字段的数字一样）
+        _d, _c = Counter(map(lambda x: x.name.split('_')[1], _file_names)).most_common(1)[0]
+        if _c > 1: 
+            raise Exception(f'目录中包含分开保存的同账户流水文件，需要手动合并，文件名第二字段为{_d}')
+        return process_files_general(_file_names, output_dir, doc_No)
+    else:
+        raise Exception("传入的路径不是目录，请传入目录路径，或使用单文件分析") 
 
