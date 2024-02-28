@@ -68,9 +68,9 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
         elif type(_val) == list: 
             if _key != 'cols_new_order': # 进行扩展操作，目前支持date、time、C、D
                 if _val[0] == 'date':
-                    _date_cols[_key] = _val[1]
+                    _date_cols[_key] = _val[1:]
                 elif _val[0] == 'time':
-                    _time_cols[_key] = _val[1]
+                    _time_cols[_key] = _val[1:]
                 elif _val[0] == 'C':
                     _cdid['C'] = _val[2]
                     _cdid['CD_col'] = _val[1]
@@ -84,7 +84,7 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
                 elif _val[0] == 'fill':
                     _fill_cols[_key] = _val[1:]
                 else:
-                    raise Exception(f"配置为list类型目前只支持转换为date和time格式，检查配置列：{_key}")                 
+                    raise Exception(f"配置为list类型目前只支持转换为date、time、C、D格式，检查配置列：{_key}")                 
         else:
             raise Exception(f"配置内容类型不支持，检查配置列：{_key}") 
 

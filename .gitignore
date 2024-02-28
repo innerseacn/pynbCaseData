@@ -1,2 +1,5 @@
 .ipynb_checkpoints/*
 .virtual_documents/*
+.pytest_cache/*
+*/__pycache__/*
+*/.ipynb_checkpoints/*

@@ -18,9 +18,11 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
     for _k, _v in conf_data.merge_2cols.items(): # 执行两列合并
         merge_2cols(df, _k, _v[0], _v[1])
     for _k, _v in conf_data.date_cols.items(): # 执行日期列数据转换
-        df[_k] = pd.to_datetime(df[_v]).dt.date
+        _format = 'mixed' if len(_v) == 1 else _v[1]
+        df[_k] = pd.to_datetime(df[_v[0]], format=_format).dt.date
     for _k, _v in conf_data.time_cols.items(): # 执行时间列数据转换
-        df[_k] = pd.to_datetime(df[_v]).dt.time
+        _format = 'mixed' if len(_v) == 1 else _v[1]
+        df[_k] = pd.to_datetime(df[_v[0]], format=_format).dt.time
     for _k, _v in conf_data.digi_cols.items(): # 执行数据列数据转换
         df[_k] = pd.to_numeric(df[_k])
     if conf_data.cdid: # 执行借贷列分列
