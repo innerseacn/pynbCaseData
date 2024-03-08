@@ -29,14 +29,6 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
         CD_to_InOut(df, conf_data.cdid)
     for _k, _v in conf_data.fill_cols.items(): # 执行列条件填充
         fill_col(df, _v[2], _k, _v[0], _v[1])
-
-#     if 'split_col' in conf_data:
-#         for _key, _val in conf_data['split_col'].items():
-#             split_2col(df, _key, _val[0], _val[1], _val[2])
-#     if 'copy_col' in conf_data:
-#         for _key, _val in conf_data['copy_col'].items():
-#             df[_val] = df[_key]
-        
     # 执行修改列名
     df.rename(columns=conf_data.col_name_map, inplace=True, errors='raise')
     #执行列序重排

@@ -2,31 +2,51 @@
 import yaml, pathlib
 from collections import namedtuple
 
+#定义操作序列数据结构
+Conf_tpl = namedtuple('Conf_tpl', """bank_name new_cols verify_cols
+                                    col_name_map merge_2cols date_cols
+                                    time_cols digi_cols cdid fill_cols
+                                    cols_new_order acc_rel_cols""")
+
+#定义配置数据变量
+_CONF_DATA: dict = {}
+_CONF_TPL_CACHE: dict[str:Conf_tpl] = {}
+
 # 加载全局配置文件
-def load_conf(conf_dir: str) -> dict:
+def load_conf(conf_dir: str='./config.yaml.d') -> dict:
+    global _CONF_DATA
     _dir = pathlib.Path(conf_dir)
     _result = {}
     for _file in _dir.glob('[!#]*.yaml'):
         with open(_file, 'r', encoding='utf-8') as f:
             _d = yaml.safe_load(f)
             _result.update(_d)
+    _CONF_DATA =  _result
     return _result
 
-CONF_DATA = load_conf('./config.yaml.d')
-OUTPUT_FORMAT = CONF_DATA['output_format']
-HEADER_HASH = CONF_DATA['header_hash']
+def get_output_format() -> str:
+    """返回配置项：输出格式"""
+    return _CONF_DATA['output_format']
 
-Conf_tpl = namedtuple('Conf_tpl', 'bank_name new_cols verify_cols col_name_map merge_2cols date_cols time_cols digi_cols cdid fill_cols cols_new_order')
+def get_header_hash() -> dict:
+    """返回配置项：表头字典"""
+    return _CONF_DATA['header_hash']
 
-CONF_TPL_CACHE: dict[str:Conf_tpl] = {}
+def get_conf_cache() -> dict:
+    """返回配置配置缓存"""
+    return _CONF_TPL_CACHE
 
-def get_conf_obj(bank_name: str, acc_or_stat: str) -> Conf_tpl: # type: ignore
+def get_conf_obj(bank_name: str, acc_or_stat: str, usecache: bool = True) -> Conf_tpl: # type: ignore
     """先在缓存中查找操作配置，如缓存中没有则转换配置并存入缓存"""
-    _key_str = bank_name + acc_or_stat
-    _conf_obj = CONF_TPL_CACHE.get(_key_str, None)
-    if _conf_obj is None:
-        _conf_obj = creat_conf_obj(CONF_DATA[bank_name][acc_or_stat])
-        CONF_TPL_CACHE[_key_str] = _conf_obj
+    global _CONF_TPL_CACHE
+    if usecache:
+        _key_str = bank_name + acc_or_stat
+        _conf_obj = _CONF_TPL_CACHE.get(_key_str, None)
+        if _conf_obj is None:
+            _conf_obj = creat_conf_obj(_CONF_DATA[bank_name][acc_or_stat])
+            _CONF_TPL_CACHE[_key_str] = _conf_obj
+    else:
+        _conf_obj = creat_conf_obj(_CONF_DATA[bank_name][acc_or_stat])
     return _conf_obj
 
 def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
@@ -40,6 +60,7 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
     _digi_cols = {} # 构造转换数值列字典
     _cdid = {} # 构造借贷分列转换字典
     _fill_cols = {} # 构造列条件填充字典
+    _acc_rel_cols = {} #构造关联账户信息列字典
     
     #根据配置信息生成列处理逻辑
     for _key, _val in conf_data.items(): # 读取配置中的列名（key）和列配置（val）
@@ -66,38 +87,46 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
             else:
                 raise Exception(f"字典类型长度错误，检查配置列：{_key}") 
         elif type(_val) == list: 
-            if _key != 'cols_new_order': # 进行扩展操作，目前支持date、time、C、D
-                if _val[0] == 'date':
+            if _key != 'other_cols': # 进行扩展操作，具体参见示例配置文档
+                if _val[0] == 'date': # 加入转换日期格式列字典
                     _date_cols[_key] = _val[1:]
-                elif _val[0] == 'time':
+                elif _val[0] == 'time': # 加入转换时间格式列字典
                     _time_cols[_key] = _val[1:]
-                elif _val[0] == 'C':
+                elif _val[0] == 'C': # 该列为出账列，构造分列转换字典
                     _cdid['C'] = _val[2]
                     _cdid['CD_col'] = _val[1]
                     _cdid['C_col'] = _key
                     _cdid['trans_col'] = _val[3]
-                elif _val[0] == 'D':
+                elif _val[0] == 'D': # 该列为入账列，构造分列转换字典
                     _cdid['D'] = _val[2]
                     _cdid['CD_col'] = _val[1]
                     _cdid['D_col'] = _key
                     _cdid['trans_col'] = _val[3]
-                elif _val[0] == 'fill':
+                elif _val[0] == 'fill': # 加入条件填充列字典
                     _fill_cols[_key] = _val[1:]
+                elif _val[0] == 'acc': # 加入账户信息关联列字典
+                    _acc_rel_cols[_key] = _val[1:]
                 else:
-                    raise Exception(f"配置为list类型目前只支持转换为date、time、C、D格式，检查配置列：{_key}")                 
+                    raise Exception(f"配置为list类型目前只支持示例配置文档中的配置格式，检查配置列：{_key}")                 
         else:
             raise Exception(f"配置内容类型不支持，检查配置列：{_key}") 
 
+    # 构造新列次序的列表
+    _cols_new_order = list(conf_data.keys())
+    _cols_new_order.remove('other_cols')
+    _cols_new_order.extend(conf_data.get('other_cols', []))
+
     # 返回列处理逻辑对象        
     return Conf_tpl(None,
-                            _new_cols,
-                            _verify_cols, 
-                            _col_name_map, 
-                            _merge_2cols, 
-                            _date_cols, 
-                            _time_cols, 
-                            _digi_cols,
-                            _cdid, 
-                            _fill_cols,
-                            conf_data.get('cols_new_order')
-                            )
+                    _new_cols,
+                    _verify_cols, 
+                    _col_name_map, 
+                    _merge_2cols, 
+                    _date_cols, 
+                    _time_cols, 
+                    _digi_cols,
+                    _cdid, 
+                    _fill_cols,
+                    _cols_new_order,
+                    _acc_rel_cols
+                    )

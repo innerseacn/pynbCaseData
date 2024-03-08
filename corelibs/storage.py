@@ -1,6 +1,6 @@
 import pathlib
 import pandas as pd
-from corelibs.config import OUTPUT_FORMAT
+from corelibs.config import get_output_format
 
 
 
@@ -8,7 +8,7 @@ def save_accounts(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str='�
     """保存账户数据：在“0银行账户”目录中每个银行保存一个文件，返回写入的行数"""
     _account_dir = output_dir.joinpath('0银行账户') # 默认账户文件根目录
     _account_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
-    return  _save_as_format(df, _account_dir.joinpath(bank_name), output_dir, True)
+    return  _save_as_format(df, _account_dir.joinpath(bank_name), get_output_format(), True)
     
 def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默认银行', doc_No: str=None) -> int:
     """保存流水数据：每个人名设立一个目录，每个账户保存一个文件，文件名为银行+账户；可以传入文书号，这样将在单独的文书号文件中做记录，返回写入的流水条数"""
@@ -21,7 +21,7 @@ def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默
         _statement_dir = output_dir.joinpath('人员流水', _acc_name) # 每个人名建立一个目录
         _statement_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
         _file_name = '：'.join([_make_df_brief(_df), bank_name, _acc])
-        _lines += _save_as_format(_df, _statement_dir.joinpath(_file_name), OUTPUT_FORMAT, False)
+        _lines += _save_as_format(_df, _statement_dir.joinpath(_file_name), get_output_format(), False)
     if doc_No is not None: # 保存查询文书记录
         _text = ','.join([doc_No, bank_name, str(_acc_name_set).replace(',', '')])  + "\n"
         with open(output_dir.joinpath('0查询文号.csv'), 'a') as f:
