@@ -22,23 +22,20 @@ def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, 
     _df_stat = parse_sheet_general(file, _conf_obj)
     if _conf_obj.acc_rel_cols and df_acc is not None:
         _df = fill_stat_cols_by_acc(_df_stat, df_acc, _conf_obj.acc_rel_cols)
-    # _grouped = _df.groupby('账号')
-    # _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
-    # save_statements(_df_list, output_dir, bank_name, doc_No)
+    else:
+        _df = _df_stat
+    _grouped = _df.groupby('账号')
+    _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
+    save_statements(_df_list, output_dir, bank_name, doc_No)
     return _df
 
 def fill_stat_cols_by_acc(df_stat: pd.DataFrame, df_acc: pd.DataFrame, acc_rel_cols: dict) -> pd.DataFrame:
     for _k, _v in acc_rel_cols.items():
         _df_acc = df_acc[_v[:2]].drop_duplicates()
-        _to_index = df_stat.columns.get_loc(_k)
-        df_stat.drop(_k, axis=1, errors='ignore', inplace=True)
-        df_stat = pd.merge(df_stat, _df_acc, left_on=_v[2], right_on=_v[0], how='left', validate='m:1', copy=False)
-        # 恢复列顺序
-        _cols = df_stat.columns.tolist()
-        _cols.pop(df_stat.columns.get_loc(_v[1]))
-        _cols.insert(_to_index, _v[1])
-        df_stat = df_stat.reindex(columns=_cols, copy=False)
-        df_stat.rename(columns={_v[1]:_k}, inplace=True, errors='raise')
+        df_stat = pd.merge(df_stat, _df_acc, left_on=_v[2], right_on=_v[0], how='left', validate='m:1', copy=False, suffixes=('', '_d'))
+        _col_d = _v[1] + '_d'
+        df_stat[_k] = df_stat[_col_d].combine_first(df_stat[_k])
+        df_stat.drop(_col_d, axis=1, errors='ignore', inplace=True)
     return df_stat
         
 def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=None) -> dict:
@@ -72,13 +69,11 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
 def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, doc_No: str=None) -> dict:
     """根据配置处理多个文件，跳过出错文件，返回处理文件个数和出错文件列表。
     本函数先根据文件类型将文件分类，依次处理账户文件和流水文件，因此可以根据账户信息丰富流水数据。"""
-    
     # 首先对文件列表根据表头类型进行分组，得到分组文件字典和出错文件字典
     _file_cate, _err_file_dict = classify_files_by_category(files_list)
     if _err_file_dict and input(f"{len(_err_file_dict)}个文件未识别：[Y继续/非Y显示详情并退出]").lower() != 'y':
         print('\n'.join([f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))
         return None
-
     # 对每一个银行首先处理所有账户文件，然后依次处理流水文件，并根据账户信息和配置填充流水文件相关列
     for _bank, _dict_files in _file_cate.items():
         _df_list = [] # 存储所有该银行账户文件DataFrame的列表
@@ -99,19 +94,20 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
         _err_file_dict.update(_err_files_tmp)
         # 得到全部账户信息
         if _df_list:
-            _df = pd.concat(_df_list, ignore_index=True)
-        # 再依次处理流水文件
-        for _file in tqdm(_dict_files['流水'], desc=f'{_bank}流水'):          
-            print(f'{_file.name}……', end='')
-            try:    
-                _df_list.append(process_statment_file_general(_file, output_dir, _bank, '流水'), doc_No)
-            except Exception as e:
-                print( _msg := str(e))
-                _err_files_tmp[_file] = _msg
-            else:
-                print('done')
-        _err_file_dict.update(_err_files_tmp)
-    print('\n'.join([f'{len(_err_file_dict)}个文件出错：'] + [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
+            _df_acc = pd.concat(_df_list, ignore_index=True)
+            _err_files_tmp = {} # 错误文件字典清零
+            # 再依次处理流水文件
+            for _file in tqdm(_dict_files['流水'], desc=f'{_bank}流水'):          
+                print(f'{_file.name}……', end='')
+                try:    
+                    _df_list.append(process_statment_file_general(_file, output_dir, _bank, '流水', doc_No, _df_acc))
+                except Exception as e:
+                    print( _msg := str(e))
+                    _err_files_tmp[_file] = _msg
+                else:
+                    print('完成')
+            _err_file_dict.update(_err_files_tmp)
+    print('\n'.join([f'共{len(_err_file_dict)}个文件出错：'] + [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
     return _err_file_dict
 
 def classify_files_by_category(files_list: list) -> tuple[dict, dict]:
