@@ -51,18 +51,21 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
             _err_file_dict[_file] = _msg
             continue
         else:
-            try:    
-                if _conf_name[1] == '账户':
-                    process_account_file_general(_file, output_dir, _conf_name[0], '账户')
-                elif _conf_name[1] == '流水':
-                    process_statment_file_general(_file, output_dir, _conf_name[0], '流水', doc_No)
+            print(f'{_conf_name[0]}', end=':')
+            for x in _conf_name[1:]:
+                try:    
+                    if x == '账户':
+                        process_account_file_general(_file, output_dir, _conf_name[0], '账户')
+                    elif x == '流水':
+                        process_statment_file_general(_file, output_dir, _conf_name[0], '流水', doc_No)
+                    else:
+                        raise Exception(f"{x}暂不支持") 
+                except Exception as e:
+                    print( _msg := str(e), end=':')
+                    _err_file_dict[_file] = _conf_name[0] + _msg
                 else:
-                     raise Exception("header_hash配置有误") 
-            except Exception as e:
-                print( _msg := str(e))
-                _err_file_dict[_file] = _msg
-            else:
-                print(f'{"".join(_conf_name)}完成')
+                    print(f'{x}完成', end=':')
+            print()
     print('\n'.join([f'{len(_err_file_dict)}个文件出错：'] + [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
     return _err_file_dict
     
@@ -79,7 +82,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
         _df_list = [] # 存储所有该银行账户文件DataFrame的列表
         _err_files_tmp = {} # 该银行下的临时错误文件字典
         # 先处理所有账户文件
-        for _file in tqdm(_dict_files['账户'], desc=f'{_bank}账户'):          
+        for _file in tqdm(_dict_files.pop('账户'), desc=f'{_bank}:账户'):          
             print(f'{_file.name}……', end='')
             try:    
                 _df_list.append(process_account_file_general(_file, output_dir, _bank, '账户'))
@@ -87,7 +90,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
                 print( _msg := str(e))
                 _err_files_tmp[_file] = _msg
             else:
-                print('done')
+                print('完成')
         if _err_files_tmp and input(f"{len(_err_files_tmp)}个账户文件出错：[Y继续/非Y显示详情并退出]").lower() != 'y':
             print('\n'.join([f'{_f.name} => {_m}' for _f, _m in _err_files_tmp.items()]))
             return None
@@ -97,7 +100,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
             _df_acc = pd.concat(_df_list, ignore_index=True)
             _err_files_tmp = {} # 错误文件字典清零
             # 再依次处理流水文件
-            for _file in tqdm(_dict_files['流水'], desc=f'{_bank}流水'):          
+            for _file in tqdm(_dict_files.pop('流水'), desc=f'{_bank}:流水'):          
                 print(f'{_file.name}……', end='')
                 try:    
                     _df_list.append(process_statment_file_general(_file, output_dir, _bank, '流水', doc_No, _df_acc))
@@ -107,6 +110,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
                 else:
                     print('完成')
             _err_file_dict.update(_err_files_tmp)
+        print(f'{_bank}:{[f for f in _dict_files]}暂不支持')
     print('\n'.join([f'共{len(_err_file_dict)}个文件出错：'] + [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
     return _err_file_dict
 
@@ -122,6 +126,7 @@ def classify_files_by_category(files_list: list) -> tuple[dict, dict]:
             print(_msg := '未找到对应配置，跳过')
             _err_file_dict[_file] = _msg
         else:
-            print(f'{"".join(_conf_name)}')
-            _file_cate.setdefault(_conf_name[0], {}).setdefault(_conf_name[1], []).append(_file)
+            print(f'{":".join(_conf_name)}')
+            for x in _conf_name[1:]:
+                _file_cate.setdefault(_conf_name[0], {}).setdefault(x, []).append(_file)
     return _file_cate, _err_file_dict
