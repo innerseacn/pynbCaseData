@@ -20,13 +20,14 @@ def load_conf(conf_dir: str='./config.yaml.d') -> dict:
     for _file in _dir.glob('[!#]*.yaml'):
         with open(_file, 'r', encoding='utf-8') as f:
             _d = yaml.safe_load(f)
-            _result.update(_d)
+            _result = {k: {**_result.get(k, {}), **_d.get(k, {})} 
+                       for k in set(_result).union(set(_d))}
     _CONF_DATA =  _result
     return _result
 
 def get_output_format() -> str:
     """返回配置项：输出格式"""
-    return _CONF_DATA['output_format']
+    return _CONF_DATA['base_config']['output_format']
 
 def get_header_hash() -> dict:
     """返回配置项：表头字典"""
