@@ -4,13 +4,15 @@ from corelibs.config import get_output_format
 
 
 
-def save_accounts(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str='默认银行') -> int:
-    """保存账户数据：在“0银行账户”目录中每个银行保存一个文件，返回写入的行数"""
-    _account_dir = output_dir.joinpath('0银行账户') # 默认账户文件根目录
+def save_general(df: pd.DataFrame, output_dir: pathlib.Path, bank_name: str='默认银行', 
+                 sub_dir: str='银行默认', sub_dir_order: str='') -> int:
+    """保存账户数据：在“2银行账户”目录中每个银行保存一个文件，返回写入的行数"""
+    _account_dir = output_dir.joinpath(sub_dir_order + '银行' + sub_dir) # 默认账户文件根目录
     _account_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
     return  _save_as_format(df, _account_dir.joinpath(bank_name), get_output_format(), True)
     
-def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默认银行', doc_No: str=None) -> int:
+def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默认银行',  
+                    sub_dir_order: str='', doc_No: str=None) -> int:
     """保存流水数据：每个人名设立一个目录，每个账户保存一个文件，文件名为银行+账户；可以传入文书号，这样将在单独的文书号文件中做记录，返回写入的流水条数"""
     _lines = 0
     _acc_name_set = set()
@@ -18,7 +20,7 @@ def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默
         _acc_name = _df['姓名'].iat[0]
         _acc_name_set.add(_acc_name)
         _acc = _df['账号'].iat[0]
-        _statement_dir = output_dir.joinpath('人员流水', _acc_name) # 每个人名建立一个目录
+        _statement_dir = output_dir.joinpath(sub_dir_order + '人员流水', _acc_name) # 每个人名建立一个目录
         _statement_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
         _file_name = '：'.join([_make_df_brief(_df), bank_name, _acc])
         _lines += _save_as_format(_df, _statement_dir.joinpath(_file_name), get_output_format(), False)
