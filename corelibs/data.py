@@ -71,6 +71,5 @@ def fill_col(df: pd.DataFrame, from_col: str, to_col: str, crit_col: str, crit_v
         _crit = df[crit_col].isnull()
     else:
         _crit = df[crit_col] == crit_val
-    # df[to_col][_crit] = df[from_col][_crit]
     df.loc[_crit, to_col] = df.loc[_crit, from_col] 
     return df

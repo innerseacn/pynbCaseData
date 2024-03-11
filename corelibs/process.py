@@ -1,7 +1,7 @@
 import pathlib
 from tqdm.auto import tqdm
 from corelibs.config import *
-from corelibs.data import parse_sheet_general
+from corelibs.data import parse_sheet_general, fill_col
 from corelibs.header import read_header
 from corelibs.storage import *
 from hashlib import md5
@@ -34,8 +34,8 @@ def fill_stat_cols_by_acc(df_stat: pd.DataFrame, df_acc: pd.DataFrame, acc_rel_c
         _df_acc = df_acc[_v[:2]].drop_duplicates()
         df_stat = pd.merge(df_stat, _df_acc, left_on=_v[2], right_on=_v[0], how='left', validate='m:1', copy=False, suffixes=('', '_d'))
         _col_d = _v[1] + '_d'
-        df_stat[_k] = df_stat[_col_d].combine_first(df_stat[_k])
-        df_stat.drop(_col_d, axis=1, errors='ignore', inplace=True)
+        df_stat[_k] = df_stat[_col_d].combine_first(df_stat[_v[2]])
+        # df_stat.drop(_col_d, axis=1, errors='ignore', inplace=True)
     return df_stat
         
 def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=None) -> dict:

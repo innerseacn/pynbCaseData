@@ -15,6 +15,7 @@ _CONF_TPL_CACHE: dict[str:Conf_tpl] = {}
 # 加载全局配置文件
 def load_conf(conf_dir: str='./config.yaml.d') -> dict:
     global _CONF_DATA
+    global _CONF_TPL_CACHE
     _dir = pathlib.Path(conf_dir)
     _result = {}
     for _file in _dir.glob('[!#]*.yaml'):
@@ -23,6 +24,7 @@ def load_conf(conf_dir: str='./config.yaml.d') -> dict:
             _result = {k: {**_result.get(k, {}), **_d.get(k, {})} 
                        for k in set(_result).union(set(_d))}
     _CONF_DATA =  _result
+    _CONF_TPL_CACHE = {}
     return _result
 
 def get_output_format() -> str:
