@@ -4,7 +4,7 @@ from collections import namedtuple
 
 #定义操作序列数据结构
 Conf_tpl = namedtuple('Conf_tpl', """bank_name new_cols verify_cols
-                                    col_name_map merge_2cols date_cols
+                                    col_name_map merge_cols date_cols
                                     time_cols digi_cols cdid fill_cols
                                     cols_new_order acc_rel_cols""")
 
@@ -57,7 +57,7 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
     _new_cols = {} # 构造需要填充统一内容的列字典，通常是新列
     _verify_cols = {} # 构造需要进行数据检查的列字典，（v1）版本只检查空值
     _col_name_map = {} # 构造需要改名的列字典
-    _merge_2cols = {} # 构造需要合并的列字典
+    _merge_cols = {} # 构造需要合并的列字典
     _date_cols = {} # 构造转换日期列字典
     _time_cols = {} # 构造转换时间列字典
     _digi_cols = {} # 构造转换数值列字典
@@ -86,7 +86,7 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
             if len(_val) == 1: # 当字典中只有一项时，代表本列需要改名
                 _col_name_map[next(iter(_val))] = _key
             elif len(_val) > 1: # 当字典中有两项或更多时，代表本列需要合并多个原始列（目前仅支持两个）
-                _merge_2cols[_key] = list(_val.keys())
+                _merge_cols[_key] = list(_val.keys())
             else:
                 raise Exception(f"字典类型长度错误，检查配置列：{_key}") 
         elif type(_val) == list: 
@@ -124,7 +124,7 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
                     _new_cols,
                     _verify_cols, 
                     _col_name_map, 
-                    _merge_2cols, 
+                    _merge_cols, 
                     _date_cols, 
                     _time_cols, 
                     _digi_cols,

@@ -15,8 +15,9 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
         raise Exception(f"验证未通过，需清洗数据列：{_col}") # todo: 临时措施
     for _k, _v in conf_data.new_cols.items(): # 执行新列赋值
         df[_k] = _v
-    for _k, _v in conf_data.merge_2cols.items(): # 执行两列合并
-        merge_2cols(df, _k, _v[0], _v[1])
+    for _k, _v in conf_data.merge_cols.items(): # 执行列合并
+        # merge_2_cols(df, _k, _v[0], _v[1])
+        merge_N_cols(df, _k, _v)
     for _k, _v in conf_data.date_cols.items(): # 执行日期列数据转换
         _format = 'mixed' if len(_v) == 1 else _v[1]
         df[_k] = pd.to_datetime(df[_v[0]], format=_format).dt.date
@@ -33,7 +34,8 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
     df.rename(columns=conf_data.col_name_map, inplace=True, errors='raise')
     #执行列序重排
     df = df.reindex(columns=conf_data.cols_new_order, copy=False)
-        
+
+    df.drop_duplicates(inplace=True)
     return df
 
 def verify_data(df: pd.DataFrame, cols: dict) -> str | int:
@@ -43,7 +45,7 @@ def verify_data(df: pd.DataFrame, cols: dict) -> str | int:
             return _col
     return 0
 
-def merge_2cols(df: pd.DataFrame, new_col: str, col1: str, col2: str) -> pd.DataFrame:
+def merge_2_cols(df: pd.DataFrame, new_col: str, col1: str, col2: str) -> pd.DataFrame:
     """合并两个dataframe字符串列为一个新列：两列中元素不同的直接相加，元素相同的只取一个避免重复"""
     _df1 = df[col1].fillna('')
     _df2 = df[col2].fillna('') # 填充两列空值为空字符串
@@ -51,6 +53,12 @@ def merge_2cols(df: pd.DataFrame, new_col: str, col1: str, col2: str) -> pd.Data
     df[new_col] = (_df1 + ' ' + _df2).str.strip() # 两列相加并保存为新列
     # df[new_col][_cond] = _df2 # 恢复两列内容相同的行
     df.loc[_cond, new_col] = _df2 # 恢复两列内容相同的行
+    return df
+
+def merge_N_cols(df: pd.DataFrame, new_col: str, cols: list) -> pd.DataFrame:
+    """合并多个dataframe字符串列为一个新列，并去除重复元素"""
+    _df = df[cols].fillna('')
+    df[new_col] = _df.apply(lambda r: ' '.join(dict.fromkeys(r[cols])), axis=1)
     return df
 
 def split_2col(df: pd.DataFrame, col: str, delimiter: str, new_col1: str, new_col2: str) -> pd.DataFrame:

@@ -46,8 +46,7 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
     _err_file_dict = {} # 保存解析出错的文件和原因
     for _file in tqdm(files_list, desc='分析目录文件'):
         print(f'{_file.name}……', end='')
-        _header = read_header(_file).encode() # 读取每个文件的表头
-        _conf_name = get_header_hash().get(md5(_header).hexdigest()) # 根据表头md5值找到相应的配置
+        _conf_name = get_file_type(_file)
         if _conf_name is None:
             print(_msg := '未找到对应配置，跳过')
             _err_file_dict[_file] = _msg
@@ -78,6 +77,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
     # 首先对文件列表根据表头类型进行分组，得到分组文件字典和出错文件字典
     _file_cate, _err_file_dict = classify_files_by_category(files_list)
     if _err_file_dict and input(f"{len(_err_file_dict)}个文件未识别：[Y继续/非Y显示详情并退出]").lower() != 'y':
+        print('以下为发生错误文件：')
         print('\n'.join([f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))
         return None
     # 对每一个银行首先处理所有账户文件，然后依次处理流水文件，并根据账户信息和配置填充流水文件相关列
@@ -139,8 +139,7 @@ def classify_files_by_category(files_list: list) -> tuple[dict, dict]:
     _err_file_dict = {} # 保存解析出错的文件和原因
     for _file in tqdm(files_list, desc='识别文件类型'):
         print(f'{_file.name} => ', end='')
-        _header = read_header(_file).encode() # 读取每个文件的表头
-        _conf_name = get_header_hash().get(md5(_header).hexdigest()) # 根据表头md5值找到相应的配置
+        _conf_name = get_file_type(_file)
         if _conf_name is None: # 如果未成功识别
             print(_msg := '未找到对应配置，跳过')
             _err_file_dict[_file] = _msg
@@ -149,3 +148,7 @@ def classify_files_by_category(files_list: list) -> tuple[dict, dict]:
             for x in _conf_name[1:]:
                 _file_cate.setdefault(_conf_name[0], {}).setdefault(x, []).append(_file)
     return _file_cate, _err_file_dict
+
+def get_file_type(file: pathlib.Path) -> list:
+    _header = read_header(file).encode() # 读取每个文件的表头
+    return get_header_hash().get(md5(_header).hexdigest()) # 根据表头md5值找到相应的配置
