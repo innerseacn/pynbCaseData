@@ -93,6 +93,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
             except Exception as e:
                 print( _msg := str(e))
                 _err_files_tmp[_file] = _msg
+                raise e
             else:
                 print('完成')
         if _err_files_tmp and input(f"{len(_err_files_tmp)}个账户文件出错：[Y继续/非Y显示详情并退出]").lower() != 'y':

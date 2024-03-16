@@ -19,10 +19,11 @@ def save_statements(df_list: list, output_dir: pathlib.Path, bank_name: str='默
     for _df in df_list:
         _acc_name = _df['姓名'].iat[0]
         _acc_name_set.add(_acc_name)
-        _acc = _df['账号'].iat[0]
         _statement_dir = output_dir.joinpath(sub_dir_order + '人员流水', _acc_name) # 每个人名建立一个目录
         _statement_dir.mkdir(parents=True, exist_ok=True) # 创建未创建的目录
-        _file_name = '：'.join([_make_df_brief(_df), bank_name, _acc])
+        _acc = _df['卡号'].drop_duplicates().to_list()
+        _acc_str = f'尾号{",".join([x[-4:] for x in _acc])}'
+        _file_name = '_'.join([_make_df_brief(_df), bank_name, _acc_str])
         _lines += _save_as_format(_df, _statement_dir.joinpath(_file_name), get_output_format(), False)
     if doc_No is not None: # 保存查询文书记录
         _text = ','.join([doc_No, bank_name, str(_acc_name_set).replace(',', '')])  + "\n"

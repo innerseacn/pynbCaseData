@@ -16,7 +16,6 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
     for _k, _v in conf_data.new_cols.items(): # 执行新列赋值
         df[_k] = _v
     for _k, _v in conf_data.merge_cols.items(): # 执行列合并
-        # merge_2_cols(df, _k, _v[0], _v[1])
         merge_N_cols(df, _k, _v)
     for _k, _v in conf_data.date_cols.items(): # 执行日期列数据转换
         _format = 'mixed' if len(_v) == 1 else _v[1]
@@ -51,14 +50,19 @@ def merge_2_cols(df: pd.DataFrame, new_col: str, col1: str, col2: str) -> pd.Dat
     _df2 = df[col2].fillna('') # 填充两列空值为空字符串
     _cond = _df1 == _df2 # 保存判断条件：两列内容相等的行为true
     df[new_col] = (_df1 + ' ' + _df2).str.strip() # 两列相加并保存为新列
-    # df[new_col][_cond] = _df2 # 恢复两列内容相同的行
     df.loc[_cond, new_col] = _df2 # 恢复两列内容相同的行
     return df
 
 def merge_N_cols(df: pd.DataFrame, new_col: str, cols: list) -> pd.DataFrame:
     """合并多个dataframe字符串列为一个新列，并去除重复元素"""
-    _df = df[cols].fillna('')
-    df[new_col] = _df.apply(lambda r: ' '.join(dict.fromkeys(r[cols])), axis=1)
+    match len(cols):
+        case 0 | 1:
+            raise Exception(r'merge_N_cols参数cols应该大于1')
+        case 2:
+            df = merge_2_cols(df, new_col, cols[0], cols[1])
+        case 3:
+            _df = df[cols].fillna('')
+            df[new_col] = _df.apply(lambda r: ' '.join(dict.fromkeys(r[cols])), axis=1)
     return df
 
 def split_2col(df: pd.DataFrame, col: str, delimiter: str, new_col1: str, new_col2: str) -> pd.DataFrame:

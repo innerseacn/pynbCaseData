@@ -5,7 +5,7 @@ def _validate_dir(dir_path: pb.Path) -> list:
     """校验目录有效性，返回待处理文件列表"""
     if not dir_path.is_dir():
         raise Exception("传入的路径不是目录，请传入目录路径，或使用单文件分析") 
-    _file_names = list(dir_path.glob('*.xlsx')) # 找到目录中所有的excel文件（不含子目录）
+    _file_names = list(filter(lambda f: not f.stem.endswith('关联子账户信息'), dir_path.glob('*光大*.xlsx')))
     return _file_names
 
 def process_dir_yangdi(dir_path: pb.Path, output_dir: pb.Path, doc_No: str=None) -> None:
