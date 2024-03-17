@@ -3,7 +3,7 @@ import yaml, pathlib
 from collections import namedtuple
 
 #定义操作序列数据结构
-Conf_tpl = namedtuple('Conf_tpl', """bank_name new_cols verify_cols
+Conf_tpl = namedtuple('Conf_tpl', """from_file from_dir new_cols verify_cols
                                     col_name_map merge_cols date_cols
                                     time_cols digi_cols cdid fill_cols
                                     cols_new_order acc_rel_cols""")
@@ -54,6 +54,8 @@ def get_conf_obj(bank_name: str, acc_or_stat: str, usecache: bool = True) -> Con
 
 def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
     """将银行配置转换成操作配置"""
+    _from_file = {} # 构造需要从文件名中取得内容的字典
+    _from_dir = {} # 构造需要从父目录名中取得内容的字典
     _new_cols = {} # 构造需要填充统一内容的列字典，通常是新列
     _verify_cols = {} # 构造需要进行数据检查的列字典，（v1）版本只检查空值
     _col_name_map = {} # 构造需要改名的列字典
@@ -91,26 +93,31 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
                 raise Exception(f"字典类型长度错误，检查配置列：{_key}") 
         elif type(_val) == list: 
             if _key != 'other_cols': # 进行扩展操作，具体参见示例配置文档
-                if _val[0] == 'date': # 加入转换日期格式列字典
-                    _date_cols[_key] = _val[1:]
-                elif _val[0] == 'time': # 加入转换时间格式列字典
-                    _time_cols[_key] = _val[1:]
-                elif _val[0] == 'C': # 该列为出账列，构造分列转换字典
-                    _cdid['C'] = _val[2]
-                    _cdid['CD_col'] = _val[1]
-                    _cdid['C_col'] = _key
-                    _cdid['trans_col'] = _val[3]
-                elif _val[0] == 'D': # 该列为入账列，构造分列转换字典
-                    _cdid['D'] = _val[2]
-                    _cdid['CD_col'] = _val[1]
-                    _cdid['D_col'] = _key
-                    _cdid['trans_col'] = _val[3]
-                elif _val[0] == 'fill': # 加入条件填充列字典
-                    _fill_cols[_key] = _val[1:]
-                elif _val[0] == 'acc': # 加入账户信息关联列字典
-                    _acc_rel_cols[_key] = _val[1:]
-                else:
-                    raise Exception(f"配置为list类型目前只支持示例配置文档中的配置格式，检查配置列：{_key}")                 
+                match _val[0]:
+                    case 'date': # 加入转换日期格式列字典
+                        _date_cols[_key] = _val[1:]
+                    case 'time': # 加入转换时间格式列字典
+                        _time_cols[_key] = _val[1:]
+                    case 'C': # 该列为出账列，构造分列转换字典
+                        _cdid['C'] = _val[2]
+                        _cdid['CD_col'] = _val[1]
+                        _cdid['C_col'] = _key
+                        _cdid['trans_col'] = _val[3]
+                    case 'D': # 该列为入账列，构造分列转换字典
+                        _cdid['D'] = _val[2]
+                        _cdid['CD_col'] = _val[1]
+                        _cdid['D_col'] = _key
+                        _cdid['trans_col'] = _val[3]
+                    case 'fill': # 加入条件填充列字典
+                        _fill_cols[_key] = _val[1:]
+                    case 'acc': # 加入账户信息关联列字典
+                        _acc_rel_cols[_key] = _val[1:]
+                    case 'file':
+                        _from_file[_key] = _val[1:]
+                    case 'dir':
+                        _from_dir[_key] = _val[1:]
+                    case _:
+                        raise Exception(f"配置为list类型目前只支持示例配置文档中的配置格式，检查配置列：{_key}")                 
         else:
             raise Exception(f"配置内容类型不支持，检查配置列：{_key}") 
 
@@ -120,7 +127,8 @@ def creat_conf_obj(conf_data: dict) -> Conf_tpl: # type: ignore
     _cols_new_order.extend(conf_data.get('other_cols', []))
 
     # 返回列处理逻辑对象        
-    return Conf_tpl(None,
+    return Conf_tpl(_from_file,
+                    _from_dir,
                     _new_cols,
                     _verify_cols, 
                     _col_name_map, 

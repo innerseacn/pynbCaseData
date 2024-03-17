@@ -1,7 +1,7 @@
 import pathlib
 from tqdm.auto import tqdm
 from corelibs.config import *
-from corelibs.data import parse_sheet_general, fill_col
+from corelibs.data import parse_sheet_general
 from corelibs.header import read_header
 from corelibs.storage import *
 from hashlib import md5
@@ -56,10 +56,12 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
             for x in _conf_name[1:]:
                 try:
                     match x:
-                        case '账户' | '客户':
-                            process_general_file(_file, output_dir, _conf_name[0], x, '')
+                        case '客户':
+                            process_general_file(_file, output_dir, _conf_name[0], x, '1')
+                        case '账户':
+                            process_general_file(_file, output_dir, _conf_name[0], x, '2')
                         case '流水':
-                            process_statment_file_general(_file, output_dir, _conf_name[0], '流水', '', doc_No)
+                            process_statment_file_general(_file, output_dir, _conf_name[0], '流水', '3', doc_No)
                         case _:
                             raise Exception(f"{x}暂不支持") 
                 except Exception as e:
@@ -76,8 +78,8 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
     本函数先根据文件类型将文件分类，依次处理账户文件和流水文件，因此可以根据账户信息丰富流水数据。"""
     # 首先对文件列表根据表头类型进行分组，得到分组文件字典和出错文件字典
     _file_cate, _err_file_dict = classify_files_by_category(files_list)
-    if _err_file_dict and input(f"{len(_err_file_dict)}个文件未识别：[Y继续/非Y显示详情并退出]").lower() != 'y':
-        print('以下为发生错误文件：')
+    print(f"{len(_err_file_dict)}个文件未识别：")
+    if _err_file_dict and input(f"[Y继续/非Y显示详情并退出]").lower() != 'y':
         print('\n'.join([f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))
         return None
     # 对每一个银行首先处理所有账户文件，然后依次处理流水文件，并根据账户信息和配置填充流水文件相关列
@@ -86,7 +88,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
         _err_files_tmp = {} # 该银行下的临时错误文件字典
 
         # 先处理所有账户文件
-        for _file in tqdm(_dict_files.pop('账户'), desc=f'{_bank}:账户'):          
+        for _file in tqdm(_dict_files.pop('账户', []), desc=f'{_bank}:账户'):          
             print(f'{_file.name}……', end='')
             try:    
                 _df_list.append(process_general_file(_file, output_dir, _bank, '账户', '2'))
@@ -96,7 +98,8 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
                 raise e
             else:
                 print('完成')
-        if _err_files_tmp and input(f"{len(_err_files_tmp)}个账户文件出错：[Y继续/非Y显示详情并退出]").lower() != 'y':
+        print(f"{len(_err_files_tmp)}个账户文件出错：")
+        if _err_files_tmp and input(f"[Y继续/非Y显示详情并退出]").lower() != 'y':
             print('\n'.join([f'{_f.name} => {_m}' for _f, _m in _err_files_tmp.items()]))
             return None
         _err_file_dict.update(_err_files_tmp)
@@ -104,21 +107,23 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
         # 得到全部账户信息
         if _df_list:
             _df_acc = pd.concat(_df_list, ignore_index=True)
-            _err_files_tmp = {} # 错误文件字典清零
-            # 再依次处理流水文件
-            for _file in tqdm(_dict_files.pop('流水'), desc=f'{_bank}:流水'):          
-                print(f'{_file.name}……', end='')
-                try:    
-                    process_statment_file_general(_file, output_dir, _bank, '流水', '3', doc_No, _df_acc)
-                except Exception as e:
-                    print( _msg := str(e))
-                    _err_files_tmp[_file] = _msg
-                else:
-                    print('完成')
-            _err_file_dict.update(_err_files_tmp)
+
+        _err_files_tmp = {} # 错误文件字典清零
+        # 再依次处理流水文件
+        for _file in tqdm(_dict_files.pop('流水', []), desc=f'{_bank}:流水'):          
+            print(f'{_file.name}……', end='')
+            try:    
+                process_statment_file_general(_file, output_dir, _bank, '流水', '3', doc_No, _df_acc)
+            except Exception as e:
+                print( _msg := str(e))
+                _err_files_tmp[_file] = _msg
+            else:
+                print('完成')
+        print(f"{len(_err_files_tmp)}个流水文件出错：")
+        _err_file_dict.update(_err_files_tmp)
 
        # 最后处理所有客户文件
-        for _file in tqdm(_dict_files.pop('客户'), desc=f'{_bank}:客户'):          
+        for _file in tqdm(_dict_files.pop('客户', []), desc=f'{_bank}:客户'):          
             print(f'{_file.name}……', end='')
             try:    
                 process_general_file(_file, output_dir, _bank, '客户', '1')
@@ -127,6 +132,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
                 _err_files_tmp[_file] = _msg
             else:
                 print('完成')
+        print(f"{len(_err_files_tmp)}个客户文件出错：")
         _err_file_dict.update(_err_files_tmp)
  
         if _dict_files:
