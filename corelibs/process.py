@@ -18,7 +18,8 @@ def process_general_file(file: pathlib.Path, output_dir: pathlib.Path, bank_name
     return _df
 
 def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, bank_name: str, 
-                                  file_type: str, sub_dir_order: str, doc_No: str=None, df_acc: pd.DataFrame=None) -> pd.DataFrame:
+                                  file_type: str, sub_dir_order: str, doc_No: str=None, 
+                                  df_acc: pd.DataFrame=None) -> pd.DataFrame:
     """根据配置处理单个流水文件， 如果提供账户信息则按照配置更新流水信息，并保存到指定目录"""
     _conf_obj = get_conf_obj(bank_name, file_type)
     _df_stat = parse_sheet_general(file, _conf_obj)
@@ -73,13 +74,15 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
     print('\n'.join([f'{len(_err_file_dict)}个文件出错：'] + [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
     return _err_file_dict
     
-def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, doc_No: str=None) -> dict:
+def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, 
+                                  doc_No: str=None, df_acc: pd.DataFrame=None) -> list:
     """根据配置处理多个文件，跳过出错文件，返回处理文件个数和出错文件列表。
-    本函数先根据文件类型将文件分类，依次处理账户文件和流水文件，因此可以根据账户信息丰富流水数据。"""
+    本函数先根据文件类型将文件分类，依次处理账户文件和流水文件，因此可以根据账户信息丰富流水数据。
+    返回解析好的账户信息和出错文件字典组成的列表"""
     # 首先对文件列表根据表头类型进行分组，得到分组文件字典和出错文件字典
     _file_cate, _err_file_dict = classify_files_by_category(files_list)
-    print(f"{len(_err_file_dict)}个文件未识别：")
-    if _err_file_dict and input(f"[Y继续/非Y显示详情并退出]").lower() != 'y':
+    print(f"{len(_err_file_dict)}个文件未识别：[Y继续/非Y显示详情并退出]")
+    if _err_file_dict and input().lower() != 'y':
         print('\n'.join([f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))
         return None
     # 对每一个银行首先处理所有账户文件，然后依次处理流水文件，并根据账户信息和配置填充流水文件相关列
@@ -95,18 +98,19 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
             except Exception as e:
                 print( _msg := str(e))
                 _err_files_tmp[_file] = _msg
-                raise e
+                # raise e # debug
             else:
                 print('完成')
-        print(f"{len(_err_files_tmp)}个账户文件出错：")
-        if _err_files_tmp and input(f"[Y继续/非Y显示详情并退出]").lower() != 'y':
+        print(f"{len(_err_files_tmp)}个账户文件出错：[Y继续/非Y显示详情并退出]")
+        if _err_files_tmp and input().lower() != 'y':
             print('\n'.join([f'{_f.name} => {_m}' for _f, _m in _err_files_tmp.items()]))
             return None
         _err_file_dict.update(_err_files_tmp)
 
         # 得到全部账户信息
-        if _df_list:
-            _df_acc = pd.concat(_df_list, ignore_index=True)
+        _df_acc = pd.concat(_df_list, ignore_index=True) if _df_list else None
+        if df_acc:
+            _df_acc = pd.concat([_df_acc, df_acc], ignore_index=True)
 
         _err_files_tmp = {} # 错误文件字典清零
         # 再依次处理流水文件
@@ -138,7 +142,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, do
         if _dict_files:
             print(f'{_bank}:{[f for f in _dict_files]}暂不支持')
     print('\n'.join([f'共{len(_err_file_dict)}个文件出错：'] + [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
-    return _err_file_dict
+    return [_df_acc, _err_file_dict]
 
 def classify_files_by_category(files_list: list) -> tuple[dict, dict]:
     """将文件列表按照配置分组，返回分组后的字典和无法识别的文件字典"""
