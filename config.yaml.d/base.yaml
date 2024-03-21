@@ -1,3 +1,6 @@
 base_config:
-    # 解析后文件格式：目前支持“excel”和“csv”（csv格式支持有待完善，尽量不要使用）
-    output_format: 'excel'
+    output_format: '' # 保留项, 目前无作用
+    output_dirs:
+        客户: 1银行客户
+        账户: 2银行账户
+        流水: 3人员流水

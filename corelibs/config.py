@@ -31,6 +31,10 @@ def get_output_format() -> str:
     """返回配置项：输出格式"""
     return _CONF_DATA['base_config']['output_format']
 
+def get_output_dirs(type: str) -> str:
+    """返回配置项：各类型信息输出子目录"""
+    return _CONF_DATA['base_config']['output_dirs'][type]
+
 def get_header_hash() -> dict:
     """返回配置项：表头字典"""
     return _CONF_DATA['header_hash']

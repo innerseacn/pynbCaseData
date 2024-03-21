@@ -10,16 +10,15 @@ import pandas as pd
 
 
 def process_general_file(file: pathlib.Path, output_dir: pathlib.Path, bank_name: str, 
-                         file_type: str, sub_dir_order: str, header=0) -> pd.DataFrame:
+                         file_type: str, header=0) -> pd.DataFrame:
     """根据配置处理单个普通文件，并保存到特定目录"""
     _conf_obj = get_conf_obj(bank_name, file_type)
     _df = parse_sheet_general(file, _conf_obj, header=header)
-    save_general(_df, output_dir, bank_name, file_type, sub_dir_order)
+    save_general(_df, output_dir, bank_name, file_type)
     return _df
 
 def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, bank_name: str, 
-                                  file_type: str, sub_dir_order: str, doc_No: str=None, 
-                                  df_acc: pd.DataFrame=None) -> pd.DataFrame:
+                                  file_type: str, doc_No: str=None, df_acc: pd.DataFrame=None) -> pd.DataFrame:
     """根据配置处理单个流水文件， 如果提供账户信息则按照配置更新流水信息，并保存到指定目录"""
     _conf_obj = get_conf_obj(bank_name, file_type)
     _df_stat = parse_sheet_general(file, _conf_obj)
@@ -29,13 +28,14 @@ def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, 
         _df = _df_stat
     _grouped = _df.groupby('账号')
     _df_list = [x.reset_index(drop=True) for _ , x in _grouped]
-    save_statements(_df_list, output_dir, bank_name, sub_dir_order, doc_No)
+    save_statements(_df_list, output_dir, bank_name, file_type, doc_No)
     return _df
 
 def fill_stat_cols_by_acc(df_stat: pd.DataFrame, df_acc: pd.DataFrame, acc_rel_cols: dict) -> pd.DataFrame:
     for _k, _v in acc_rel_cols.items():
         _df_acc = df_acc[_v[:2]].drop_duplicates()
-        df_stat = pd.merge(df_stat, _df_acc, left_on=_v[2], right_on=_v[0], how='left', validate='m:1', copy=False, suffixes=('', '_d'))
+        df_stat = pd.merge(df_stat, _df_acc, left_on=_v[2], right_on=_v[0], how='left', 
+                           validate='m:1', copy=False, suffixes=('', '_d'))
         _col_d = _v[1] + '_d'
         df_stat[_k] = df_stat[_col_d].combine_first(df_stat[_v[2]])
         # df_stat.drop(_col_d, axis=1, errors='ignore', inplace=True)
@@ -57,12 +57,10 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
             for x in _conf_name[1:]:
                 try:
                     match x:
-                        case '客户':
-                            process_general_file(_file, output_dir, _conf_name[0], x, '1')
-                        case '账户':
-                            process_general_file(_file, output_dir, _conf_name[0], x, '2')
+                        case '客户' | '账户':
+                            process_general_file(_file, output_dir, _conf_name[0], x)
                         case '流水':
-                            process_statment_file_general(_file, output_dir, _conf_name[0], '流水', '3', doc_No)
+                            process_statment_file_general(_file, output_dir, _conf_name[0], x, doc_No)
                         case _:
                             raise Exception(f"{x}暂不支持") 
                 except Exception as e:
@@ -71,7 +69,8 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
                 else:
                     print(f'{x}完成', end=':')
             print()
-    print('\n'.join([f'{len(_err_file_dict)}个文件出错：'] + [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
+    print('\n'.join([f'{len(_err_file_dict)}个文件出错：'] + 
+                    [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
     return _err_file_dict
     
 def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, 
@@ -94,7 +93,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path,
         for _file in tqdm(_dict_files.pop('账户', []), desc=f'{_bank}:账户'):          
             print(f'{_file.name}……', end='')
             try:    
-                _df_list.append(process_general_file(_file, output_dir, _bank, '账户', '2'))
+                _df_list.append(process_general_file(_file, output_dir, _bank, '账户'))
             except Exception as e:
                 print( _msg := str(e))
                 _err_files_tmp[_file] = _msg
@@ -117,7 +116,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path,
         for _file in tqdm(_dict_files.pop('流水', []), desc=f'{_bank}:流水'):          
             print(f'{_file.name}……', end='')
             try:    
-                process_statment_file_general(_file, output_dir, _bank, '流水', '3', doc_No, _df_acc)
+                process_statment_file_general(_file, output_dir, _bank, '流水', doc_No, _df_acc)
             except Exception as e:
                 print( _msg := str(e))
                 _err_files_tmp[_file] = _msg
@@ -130,7 +129,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path,
         for _file in tqdm(_dict_files.pop('客户', []), desc=f'{_bank}:客户'):          
             print(f'{_file.name}……', end='')
             try:    
-                process_general_file(_file, output_dir, _bank, '客户', '1')
+                process_general_file(_file, output_dir, _bank, '客户')
             except Exception as e:
                 print( _msg := str(e))
                 _err_files_tmp[_file] = _msg
@@ -161,5 +160,6 @@ def classify_files_by_category(files_list: list) -> tuple[dict, dict]:
     return _file_cate, _err_file_dict
 
 def get_file_type(file: pathlib.Path) -> list:
+    """根据文件表头找到该文件类型,亦即解析文件配置入口"""
     _header = read_header(file).encode() # 读取每个文件的表头
     return get_header_hash().get(md5(_header).hexdigest()) # 根据表头md5值找到相应的配置
