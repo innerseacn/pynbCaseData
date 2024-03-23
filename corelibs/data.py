@@ -10,7 +10,11 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
     """分析一般数据sheet：支持sheet中仅含单表，返回dataframe"""
     # 读取工作表内容
     df = pd.read_excel(file_path, sheet_name=sheet, header=header, skiprows=0, dtype=str)
-        
+    # 根据配置处理数据信息
+    return _process_df_by_conf(file_path, conf_data, df)
+
+def _process_df_by_conf(file_path: pathlib.Path, conf_data: Conf_tpl, df: pd.DataFrame) -> pd.DataFrame:
+    """根据配置处理dataframe"""
     # 列数据处理
     if (_col := _verify_data(df, conf_data.verify_cols)): # 执行数据检查
         raise Exception(f"验证未通过，需清洗数据列：{_col}") # todo: 临时措施
@@ -36,9 +40,9 @@ def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, h
         _fill_col(df, _v[2], _k, _v[0], _v[1])
     # 执行修改列名
     df.rename(columns=conf_data.col_name_map, inplace=True, errors='raise')
-    #执行列序重排
+    # 执行列序重排
     df = df.reindex(columns=conf_data.cols_new_order, copy=False)
-
+    # 行去重
     df.drop_duplicates(inplace=True)
     return df
 
@@ -68,7 +72,8 @@ def _merge_N_cols(df: pd.DataFrame, new_col: str, cols: list) -> pd.DataFrame:
         _merge_2_cols(df, new_col, cols[0], cols[1])
     elif l > 2:
         _df = df[cols].fillna('')
-        df[new_col] = _df.apply(lambda r: ' '.join(dict.fromkeys(r[cols])), axis=1)
+        df[new_col] = _df.apply(lambda r: ' '.join(
+            filter(lambda a: a != '', dict.fromkeys(r[cols]))), axis=1)
         df[new_col].replace('', np.nan, inplace=True) # 保持和读取文件后的内容一致(便于去重操作)
     return df
 

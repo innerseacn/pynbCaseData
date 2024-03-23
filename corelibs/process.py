@@ -125,6 +125,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path,
         print(f"{len(_err_files_tmp)}个流水文件出错：")
         _err_file_dict.update(_err_files_tmp)
 
+        _err_files_tmp = {} # 错误文件字典清零
        # 最后处理所有客户文件
         for _file in tqdm(_dict_files.pop('客户', []), desc=f'{_bank}:客户'):          
             print(f'{_file.name}……', end='')
