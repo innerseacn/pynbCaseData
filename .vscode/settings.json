@@ -1,4 +1,4 @@
 {
-    "Codegeex.CommitMessageStyle": "Auto",
+    "Codegeex.CommitMessageStyle": "ConventionalCommits",
     "Codegeex.CompletionModel": "CodeGeeX Pro[Beta]"
 }
