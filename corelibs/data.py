@@ -1,15 +1,22 @@
 import pathlib
 import pandas as pd
 import numpy as np
-
+from typing import Callable
 from corelibs.config import Conf_tpl
 
 
 
-def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, sheet=0, header=0) -> pd.DataFrame:
+def parse_sheet_general(file_path: pathlib.Path, conf_data: Conf_tpl, 
+                        prefunc: Callable[[pd.DataFrame], pd.DataFrame]=None, sheet=0, header=0) -> pd.DataFrame:
     """分析一般数据sheet：支持sheet中仅含单表，返回dataframe"""
     # 读取工作表内容
     df = pd.read_excel(file_path, sheet_name=sheet, header=header, skiprows=0, dtype=str)
+    # 根据传入的函数对读取的dataframe进行前处理
+    if prefunc:
+        df = prefunc(df)
+    # 处理数据信息
+    df = _process_df_by_conf(file_path, conf_data, df)
+    return df
     # 根据配置处理数据信息
     return _process_df_by_conf(file_path, conf_data, df)
 

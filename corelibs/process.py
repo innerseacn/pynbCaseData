@@ -1,4 +1,5 @@
 import pathlib
+from typing import Callable
 from tqdm.auto import tqdm
 from corelibs.config import *
 from corelibs.data import parse_sheet_general
@@ -13,15 +14,15 @@ def process_general_file(file: pathlib.Path, output_dir: pathlib.Path, bank_name
                          file_type: str, header=0) -> pd.DataFrame:
     """根据配置处理单个普通文件，并保存到特定目录"""
     _conf_obj = get_conf_obj(bank_name, file_type)
-    _df = parse_sheet_general(file, _conf_obj, header=header)
+    _df = parse_sheet_general(file, _conf_obj, prefunc=None, header=header)
     save_general(_df, output_dir, bank_name, file_type)
     return _df
 
-def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, bank_name: str, 
-                                  file_type: str, doc_No: str=None, df_acc: pd.DataFrame=None) -> pd.DataFrame:
+def process_statment_file_general(file: pathlib.Path, output_dir: pathlib.Path, bank_name: str, file_type: str, doc_No: str=None, 
+                                  prefunc: Callable[[pd.DataFrame], pd.DataFrame]=None, df_acc: pd.DataFrame=None) -> pd.DataFrame:
     """根据配置处理单个流水文件， 如果提供账户信息则按照配置更新流水信息，并保存到指定目录"""
     _conf_obj = get_conf_obj(bank_name, file_type)
-    _df_stat = parse_sheet_general(file, _conf_obj)
+    _df_stat = parse_sheet_general(file, _conf_obj, prefunc)
     if _conf_obj.acc_rel_cols and df_acc is not None:
         _df = fill_stat_cols_by_acc(_df_stat, df_acc, _conf_obj.acc_rel_cols)
     else:
@@ -41,7 +42,8 @@ def fill_stat_cols_by_acc(df_stat: pd.DataFrame, df_acc: pd.DataFrame, acc_rel_c
         # df_stat.drop(_col_d, axis=1, errors='ignore', inplace=True)
     return df_stat
         
-def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=None) -> dict:
+def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=None, 
+                       prefunc: Callable[[pd.DataFrame], pd.DataFrame]=None) -> dict:
     """根据配置处理多个文件，跳过出错文件，返回出错文件字典。
     本函数依次处理每个文件，不能根据账户信息丰富流水数据。"""
     _err_file_dict = {} # 保存解析出错的文件和原因
@@ -60,7 +62,7 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
                         case '客户' | '账户':
                             process_general_file(_file, output_dir, _conf_name[0], x)
                         case '流水':
-                            process_statment_file_general(_file, output_dir, _conf_name[0], x, doc_No)
+                            process_statment_file_general(_file, output_dir, _conf_name[0], x, doc_No, prefunc)
                         case _:
                             raise Exception(f"{x}暂不支持") 
                 except Exception as e:
@@ -73,8 +75,8 @@ def process_files_1by1(files_list: list, output_dir: pathlib.Path, doc_No: str=N
                     [f'{_f.name} => {_m}' for _f, _m in _err_file_dict.items()]))    
     return _err_file_dict
     
-def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, 
-                                  doc_No: str=None, df_acc: pd.DataFrame=None) -> list:
+def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path, doc_No: str=None, 
+                                  prefunc: Callable[[pd.DataFrame], pd.DataFrame]=None, df_acc: pd.DataFrame=None) -> list:
     """根据配置处理多个文件，跳过出错文件，返回处理文件个数和出错文件列表。
     本函数先根据文件类型将文件分类，依次处理账户文件和流水文件，因此可以根据账户信息丰富流水数据。
     返回解析好的账户信息和出错文件字典组成的列表"""
@@ -116,7 +118,7 @@ def process_files_accs_then_stats(files_list: list, output_dir: pathlib.Path,
         for _file in tqdm(_dict_files.pop('流水', []), desc=f'{_bank}:流水'):          
             print(f'{_file.name}……', end='')
             try:    
-                process_statment_file_general(_file, output_dir, _bank, '流水', doc_No, _df_acc)
+                process_statment_file_general(_file, output_dir, _bank, '流水', doc_No, prefunc, _df_acc)
             except Exception as e:
                 print( _msg := str(e))
                 _err_files_tmp[_file] = _msg
